@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Face Flappy Game - Custom Size Mode</title>
+    <title>避けろ！らぶか！</title>
     <style>
         body {
             margin: 0;
@@ -43,6 +43,8 @@
             box-shadow: 0 10px 25px rgba(0,0,0,0.3);
             pointer-events: auto; /* ボタンなどは押せるようにする */
             max-width: 400px;
+            /* UIも少し拡大縮小に対応させる */
+            transform-origin: center;
         }
         h1 {
             margin: 0 0 15px 0;
@@ -54,11 +56,6 @@
             margin-bottom: 25px;
             font-size: 18px;
             line-height: 1.5;
-        }
-        .level-info {
-            font-size: 14px;
-            color: #888;
-            margin-top: 10px;
         }
         button {
             background: #ff5722;
@@ -138,22 +135,22 @@
         const BACKGROUND_IMAGE_SRC = '';
 
         // ==========================================
-        // ▼▼▼ サイズと難易度の設定（ここをいじる！） ▼▼▼
+        // ▼▼▼ サイズと難易度の設定 ▼▼▼
         // ==========================================
         
+        // ★重要★: これらの数値は「高さ720pxの画面」を基準とした大きさです。
+        // 実際の画面サイズに合わせて自動的に拡大縮小されます。
+        
         // 1. プレイヤーの大きさ（半径）
-        // 元は25でした。30くらいにすると少し当たりやすくなります。
         const PLAYER_RADIUS = 30; 
 
         // 2. 敵の大きさ（縦横サイズ）
-        // 元は60でした。90〜100にするとかなり圧迫感が出ます。
-        const ENEMY_SIZE = 90;
+        const ENEMY_SIZE = 100;
 
         // 3. レベルアップの区切り
-        const LEVEL_STEP = 15;
+        const LEVEL_STEP = 150;
         
         // 4. 敵が出る頻度（距離）
-        // 小さいほどたくさん出る。元は350
         const SPAWN_INTERVAL = 350;
 
         // ==========================================
@@ -171,10 +168,14 @@
             canvas.style.backgroundImage = `url('${BACKGROUND_IMAGE_SRC}')`;
         }
 
-        // ゲームの設定値
-        const INITIAL_SPEED = 5;     // 初期の横スクロール速度
-        const GRAVITY = 0.4;         // 重力
-        const JUMP_STRENGTH = -8;    // ジャンプ力
+        // ゲームの設定値（高さ720px基準）
+        const BASE_HEIGHT = 720; // 基準となる高さ
+        const INITIAL_SPEED = 5;
+        const GRAVITY = 0.4;
+        const JUMP_STRENGTH = -8;
+
+        let scaleRatio = 1; // 画面サイズに合わせた縮尺率
+        let logicalWidth = 0; // ゲーム内の論理的な横幅
 
         let gameState = 'START';
         let score = 0;
@@ -199,9 +200,22 @@
             enemyImages.push(img);
         });
 
+        // 画面リサイズとスケーリング計算
         function resizeCanvas() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
+
+            // 基準の高さ(720px)に対して、現在の画面がどれくらいの倍率か計算
+            scaleRatio = canvas.height / BASE_HEIGHT;
+            
+            // ゲーム内の論理的な横幅を計算（実際の幅 ÷ 倍率）
+            logicalWidth = canvas.width / scaleRatio;
+
+            // UIのサイズ感も合わせる（あくまで補助的）
+            const uiScale = Math.min(scaleRatio, 1.5); 
+            document.querySelectorAll('.message-box').forEach(el => {
+                el.style.transform = `scale(${Math.max(0.7, uiScale)})`;
+            });
         }
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
@@ -210,7 +224,7 @@
         const player = {
             x: 100, 
             y: 300,
-            radius: PLAYER_RADIUS, // ★設定値を適用
+            radius: PLAYER_RADIUS,
             velocity: 0,
             rotation: 0,
 
@@ -233,6 +247,7 @@
                     ctx.strokeStyle = "#333";
                     ctx.lineWidth = 3;
                     ctx.stroke();
+                    // 顔パーツ
                     ctx.fillStyle = "#333";
                     ctx.beginPath(); ctx.arc(10, -8, 4, 0, Math.PI*2); ctx.fill();
                     ctx.beginPath(); ctx.arc(12, -8, 4, 0, Math.PI*2); ctx.fill();
@@ -245,11 +260,13 @@
                 this.velocity += GRAVITY;
                 this.y += this.velocity;
 
-                if (this.y + this.radius >= canvas.height) {
-                    this.y = canvas.height - this.radius;
+                // 地面判定（BASE_HEIGHTを使う）
+                if (this.y + this.radius >= BASE_HEIGHT) {
+                    this.y = BASE_HEIGHT - this.radius;
                     gameOver();
                 }
                 
+                // 天井判定
                 if (this.y - this.radius <= 0) {
                     this.y = this.radius;
                     this.velocity = 2; 
@@ -261,10 +278,10 @@
             }
         };
 
-        // 障害物（飛んでくる敵）管理
+        // 障害物管理
         const obstacles = {
             items: [],
-            size: ENEMY_SIZE, // ★設定値を適用
+            size: ENEMY_SIZE,
 
             draw: function() {
                 for (let i = 0; i < this.items.length; i++) {
@@ -311,9 +328,10 @@
                 let lastItem = this.items.length > 0 ? this.items[this.items.length - 1] : null;
                 let spawnDist = SPAWN_INTERVAL - (Math.random() * 100); 
 
-                if (!lastItem || canvas.width - (lastItem.x + this.size) >= spawnDist) {
+                // 出現判定（logicalWidthを使用）
+                if (!lastItem || logicalWidth - (lastItem.x + this.size) >= spawnDist) {
                     let minY = 0; 
-                    let maxY = canvas.height - this.size;
+                    let maxY = BASE_HEIGHT - this.size; // BASE_HEIGHTを使用
                     let _y = Math.random() * (maxY - minY) + minY;
                     
                     let selectedImg = null;
@@ -327,7 +345,7 @@
                     }
 
                     this.items.push({
-                        x: canvas.width,
+                        x: logicalWidth, // 論理的な右端から出現
                         y: _y,
                         img: selectedImg,
                         passed: false
@@ -342,13 +360,12 @@
                     let dy = (o.y + this.size/2) - player.y;
                     let distance = Math.sqrt(dx * dx + dy * dy);
 
-                    // 当たり判定
                     if (distance < player.radius + (this.size / 2 * 0.8)) {
                         gameOver();
                     }
 
                     if (o.x + this.size < player.x && !o.passed) {
-                        score++;
+                        score += 10;
                         scoreDisplay.innerText = score;
                         o.passed = true;
                         
@@ -381,11 +398,21 @@
 
         function loop() {
             if (gameState !== 'PLAYING') return;
+
+            // 1. ピクセル単位で画面クリア（前のフレームの絵を消す）
+            // clearRectは物理座標系で行うため、一度トランスフォームをリセットする
+            ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 2. 縮尺を適用（ここから下の描画はすべて scaleRatio 倍になる）
+            ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
+
+            // 3. ゲーム要素の描画（論理座標系で描く）
             obstacles.update();
             obstacles.draw();
             player.update();
             player.draw();
+
             requestAnimationFrame(loop);
         }
 
@@ -395,7 +422,7 @@
             scoreDisplay.style.display = 'block';
             levelDisplay.style.display = 'block';
             
-            player.y = canvas.height / 2;
+            player.y = BASE_HEIGHT / 2;
             player.velocity = 0;
             obstacles.reset();
             score = 0;
