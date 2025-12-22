@@ -135,6 +135,17 @@
         const BACKGROUND_IMAGE_SRC = '';
 
         // ==========================================
+        // ▼▼▼ 音声の設定（ここを追加しました！） ▼▼▼
+        // ==========================================
+        // 音声ファイルを用意して、ファイル名を書いてください。
+        // 例: './jump.mp3'
+        // 使わない場合は '' (空文字) のままにしてください。
+
+        const SOUND_JUMP_SRC = './ニュッ2.mp3';      // ジャンプした時の音
+        const SOUND_GAMEOVER_SRC = './「残念」.mp3';  // ぶつかった時の音
+        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3';     // スコアが入った時の音
+
+        // ==========================================
         // ▼▼▼ サイズと難易度の設定 ▼▼▼
         // ==========================================
         
@@ -162,6 +173,31 @@
         const startScreen = document.getElementById('start-screen');
         const gameOverScreen = document.getElementById('game-over-screen');
         const finalScoreText = document.getElementById('final-score');
+
+        // 音声オブジェクトの準備
+        const sounds = {
+            jump: new Audio(),
+            gameover: new Audio(),
+            score: new Audio()
+        };
+        
+        // 音声ファイルの読み込み設定
+        if (SOUND_JUMP_SRC) sounds.jump.src = SOUND_JUMP_SRC;
+        if (SOUND_GAMEOVER_SRC) sounds.gameover.src = SOUND_GAMEOVER_SRC;
+        if (SOUND_SCORE_SRC) sounds.score.src = SOUND_SCORE_SRC;
+
+        // 音声を再生する便利関数
+        function playSound(type) {
+            const sound = sounds[type];
+            if (sound && sound.src) {
+                // 連打できるように再生位置をリセット
+                sound.currentTime = 0;
+                sound.play().catch(e => {
+                    // ブラウザの自動再生ポリシーなどで再生できなかった場合は無視
+                    console.log('Sound play failed:', e);
+                });
+            }
+        }
 
         // 背景画像の設定適用
         if (BACKGROUND_IMAGE_SRC && BACKGROUND_IMAGE_SRC.trim() !== '') {
@@ -275,6 +311,7 @@
 
             jump: function() {
                 this.velocity = JUMP_STRENGTH;
+                playSound('jump'); // ★ジャンプ音再生
             }
         };
 
@@ -367,6 +404,7 @@
                     if (o.x + this.size < player.x && !o.passed) {
                         score += 10;
                         scoreDisplay.innerText = score;
+                        playSound('score'); // ★スコア音再生
                         o.passed = true;
                         
                         if (score % LEVEL_STEP === 0) {
@@ -400,7 +438,6 @@
             if (gameState !== 'PLAYING') return;
 
             // 1. ピクセル単位で画面クリア（前のフレームの絵を消す）
-            // clearRectは物理座標系で行うため、一度トランスフォームをリセットする
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -431,11 +468,19 @@
             
             scoreDisplay.innerText = score;
             levelDisplay.innerText = "Lv.1";
+            
+            // ユーザーアクションがあったので、Audioの再生制限が解除される可能性が高い
+            // 念のため全ての音声をミュートで一瞬再生してロードさせるハック
+            Object.values(sounds).forEach(s => {
+                if(s.src) { s.volume = 0; s.play().then(() => s.volume = 1).catch(()=>{}); }
+            });
+
             loop();
         }
 
         function gameOver() {
             gameState = 'GAMEOVER';
+            playSound('gameover'); // ★ゲームオーバー音再生
             finalScoreText.innerText = score;
             gameOverScreen.style.display = 'block';
             scoreDisplay.style.display = 'none';
