@@ -135,7 +135,7 @@
         const BACKGROUND_IMAGE_SRC = '';
 
         // ==========================================
-        // ▼▼▼ 音声の設定（ここを追加しました！） ▼▼▼
+        // ▼▼▼ 音声の設定 ▼▼▼
         // ==========================================
         // 音声ファイルを用意して、ファイル名を書いてください。
         // 例: './jump.mp3'
@@ -190,10 +190,9 @@
         function playSound(type) {
             const sound = sounds[type];
             if (sound && sound.src) {
-                // 連打できるように再生位置をリセット
                 sound.currentTime = 0;
+                sound.volume = 1; // 念のため音量を1に
                 sound.play().catch(e => {
-                    // ブラウザの自動再生ポリシーなどで再生できなかった場合は無視
                     console.log('Sound play failed:', e);
                 });
             }
@@ -468,12 +467,8 @@
             
             scoreDisplay.innerText = score;
             levelDisplay.innerText = "Lv.1";
-            
-            // ユーザーアクションがあったので、Audioの再生制限が解除される可能性が高い
-            // 念のため全ての音声をミュートで一瞬再生してロードさせるハック
-            Object.values(sounds).forEach(s => {
-                if(s.src) { s.volume = 0; s.play().then(() => s.volume = 1).catch(()=>{}); }
-            });
+
+            // ★ここで無理に音声を再生する処理を削除しました
 
             loop();
         }
