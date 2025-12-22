@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Face Flappy Game - Synchronized Mode</title>
+    <title>Face Flappy Game - Custom Size Mode</title>
     <style>
         body {
             margin: 0;
@@ -112,9 +112,9 @@
 
     <div id="ui-layer">
         <div id="start-screen" class="message-box">
-            <h1>顔面フラッピー<br>(進化モード)</h1>
+            <h1>顔面フラッピー<br>(サイズ調整版)</h1>
             <p>前から飛んでくる友達(敵)を避けろ！<br>
-               <span style="font-size: 0.9em; color: #ff5722;">★15点ごとにレベルアップして<br>新しい敵キャラが登場するよ！</span>
+               <span style="font-size: 0.9em; color: #ff5722;">★敵がデカくなったぞ！</span>
             </p>
             <button onclick="startGame()">スタート！</button>
         </div>
@@ -127,25 +127,35 @@
 
     <script>
         // ==========================================
-        // ▼▼▼ ここで画像をカスタマイズ！ ▼▼▼
+        // ▼▼▼ 画像の設定 ▼▼▼
         // ==========================================
-        
-        // 1. プレイヤー（友達）の画像URL
         const PLAYER_IMAGE_SRC = './Rabuka.png'; 
-
-        // 2. 敵キャラ（飛んでくる友達）の画像リスト
         const ENEMY_IMAGE_SOURCES = [
-            './issen.png', // 1つ目の画像 (Lv1: 0点〜)
-            './TD.png',    // 2つ目の画像 (Lv2: 15点〜)
-            './yama2.png', // 3つ目の画像 (Lv3: 30点〜)
-            './houou.jpeg' // 4つ目の画像 (Lv4: 45点〜)
+            './issen.png', 
+            './TD.png',    
+            './yama2.png', 
+            './houou.jpeg' 
         ];
-
-        // 3. 背景画像のURL
         const BACKGROUND_IMAGE_SRC = '';
 
-        // 4. レベルアップの区切り
+        // ==========================================
+        // ▼▼▼ サイズと難易度の設定（ここをいじる！） ▼▼▼
+        // ==========================================
+        
+        // 1. プレイヤーの大きさ（半径）
+        // 元は25でした。30くらいにすると少し当たりやすくなります。
+        const PLAYER_RADIUS = 30; 
+
+        // 2. 敵の大きさ（縦横サイズ）
+        // 元は60でした。90〜100にするとかなり圧迫感が出ます。
+        const ENEMY_SIZE = 90;
+
+        // 3. レベルアップの区切り
         const LEVEL_STEP = 15;
+        
+        // 4. 敵が出る頻度（距離）
+        // 小さいほどたくさん出る。元は350
+        const SPAWN_INTERVAL = 350;
 
         // ==========================================
         
@@ -164,28 +174,23 @@
 
         // ゲームの設定値
         const INITIAL_SPEED = 5;     // 初期の横スクロール速度
-        const SPAWN_INTERVAL = 350;  // 敵が出現する距離間隔
         const GRAVITY = 0.4;         // 重力
         const JUMP_STRENGTH = -8;    // ジャンプ力
 
         let gameState = 'START';
         let score = 0;
         let currentLevel = 1;
-        
-        // 動的な難易度パラメータ
         let gameSpeed = INITIAL_SPEED;
         
         // 画像ロード処理
         let playerImg = new Image();
         let playerImgLoaded = false;
         
-        // プレイヤー画像の読み込み
         if (PLAYER_IMAGE_SRC) {
             playerImg.src = PLAYER_IMAGE_SRC;
             playerImg.onload = () => { playerImgLoaded = true; };
         }
 
-        // 敵画像の読み込み（複数対応）
         let enemyImages = [];
         const validEnemySources = ENEMY_IMAGE_SOURCES.filter(src => src && src.trim() !== '');
         
@@ -195,7 +200,6 @@
             enemyImages.push(img);
         });
 
-        // 画面リサイズ対応
         function resizeCanvas() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -207,7 +211,7 @@
         const player = {
             x: 100, 
             y: 300,
-            radius: 25, 
+            radius: PLAYER_RADIUS, // ★設定値を適用
             velocity: 0,
             rotation: 0,
 
@@ -223,7 +227,6 @@
                     ctx.clip();
                     ctx.drawImage(playerImg, -this.radius * 1.5, -this.radius * 1.5, this.radius * 3, this.radius * 3);
                 } else {
-                    // デフォルト顔
                     ctx.beginPath();
                     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
                     ctx.fillStyle = "#FFD700";
@@ -243,13 +246,11 @@
                 this.velocity += GRAVITY;
                 this.y += this.velocity;
 
-                // 地面判定
                 if (this.y + this.radius >= canvas.height) {
                     this.y = canvas.height - this.radius;
                     gameOver();
                 }
                 
-                // 天井判定
                 if (this.y - this.radius <= 0) {
                     this.y = this.radius;
                     this.velocity = 2; 
@@ -264,26 +265,22 @@
         // 障害物（飛んでくる敵）管理
         const obstacles = {
             items: [],
-            size: 60, // 敵のサイズ
+            size: ENEMY_SIZE, // ★設定値を適用
 
             draw: function() {
                 for (let i = 0; i < this.items.length; i++) {
                     let o = this.items[i];
                     
                     ctx.save();
-                    // 敵の位置へ移動
                     ctx.translate(o.x + this.size/2, o.y + this.size/2);
                     
-                    // 敵画像がある場合
                     if (o.img) {
                         if (o.img.complete) {
                             ctx.drawImage(o.img, -this.size/2, -this.size/2, this.size, this.size);
                         } else {
-                            // ロード中なら代替描画
                             this.drawDefaultEnemy(ctx, this.size);
                         }
                     } else {
-                        // デフォルトの敵
                         this.drawDefaultEnemy(ctx, this.size);
                     }
                     
@@ -292,24 +289,20 @@
             },
 
             drawDefaultEnemy: function(ctx, size) {
-                // 黒っぽい鳥のようなシルエット
                 ctx.fillStyle = "#333";
                 ctx.beginPath();
                 ctx.arc(0, 0, size/2 - 5, 0, Math.PI*2);
                 ctx.fill();
-                // くちばし
                 ctx.fillStyle = "#f39c12";
                 ctx.beginPath();
                 ctx.moveTo(-10, 5);
                 ctx.lineTo(-size/2 - 5, 10);
                 ctx.lineTo(-10, 15);
                 ctx.fill();
-                // 目
                 ctx.fillStyle = "white";
                 ctx.beginPath(); ctx.arc(-5, -5, 8, 0, Math.PI*2); ctx.fill();
                 ctx.fillStyle = "black";
                 ctx.beginPath(); ctx.arc(-8, -5, 3, 0, Math.PI*2); ctx.fill();
-                // 眉毛
                 ctx.strokeStyle = "red";
                 ctx.lineWidth = 2;
                 ctx.beginPath(); ctx.moveTo(-15, -12); ctx.lineTo(5, -2); ctx.stroke();
@@ -324,7 +317,6 @@
                     let maxY = canvas.height - this.size;
                     let _y = Math.random() * (maxY - minY) + minY;
                     
-                    // 画像選択ロジック
                     let selectedImg = null;
                     if (enemyImages.length > 0) {
                         let unlockedCount = Math.floor(score / LEVEL_STEP) + 1;
@@ -351,6 +343,7 @@
                     let dy = (o.y + this.size/2) - player.y;
                     let distance = Math.sqrt(dx * dx + dy * dy);
 
+                    // 当たり判定
                     if (distance < player.radius + (this.size / 2 * 0.8)) {
                         gameOver();
                     }
