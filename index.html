@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Face Flappy Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #333;
+            overflow: hidden; /* スクロール防止 */
+            font-family: 'Arial', sans-serif;
+            touch-action: none; /* スマホでのダブルタップ拡大などを防止 */
+        }
+        #gameCanvas {
+            display: block;
+            margin: 0 auto;
+            background: linear-gradient(to bottom, #70c5ce, #ffffff); /* 空のグラデーション */
+        }
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none; /* UIの下のCanvasをクリックできるようにする */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            text-align: center;
+        }
+        .message-box {
+            background: rgba(255, 255, 255, 0.9);
+            padding: 20px 40px;
+            border-radius: 15px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            pointer-events: auto; /* ボタンなどは押せるようにする */
+        }
+        h1 {
+            margin: 0 0 10px 0;
+            color: #333;
+            font-size: 24px;
+        }
+        p {
+            color: #666;
+            margin-bottom: 20px;
+        }
+        button {
+            background: #ff5722;
+            color: white;
+            border: none;
+            padding: 10px 30px;
+            font-size: 18px;
+            border-radius: 25px;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+        button:active {
+            transform: scale(0.95);
+        }
+        #score-display {
+            position: absolute;
+            top: 20px;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 40px;
+            font-weight: bold;
+            color: white;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+            pointer-events: none;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="score-display">0</div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="start-screen" class="message-box">
+            <h1>顔面フラッピー</h1>
+            <p>画面をタップ または スペースキーでジャンプ！</p>
+            <button onclick="startGame()">スタート</button>
+        </div>
+        <div id="game-over-screen" class="message-box" style="display: none;">
+            <h1>GAME OVER</h1>
+            <p>Score: <span id="final-score">0</span></p>
+            <button onclick="resetGame()">もう一回！</button>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // ▼▼▼ ここで画像をカスタマイズ！ ▼▼▼
+        // ==========================================
+        
+        // 1. プレイヤー（友達）の画像URL
+        // 例: './friend_face.png' または 'https://example.com/face.jpg'
+        // 画像がない場合は空文字 '' にしてください（デフォルトの顔が表示されます）
+        const PLAYER_IMAGE_SRC = ''; 
+
+        // 2. 障害物（別の友達や敵）の画像URL
+        // 画像がない場合は空文字 '' にしてください（デフォルトのブロックが表示されます）
+        const OBSTACLE_IMAGE_SRC = ''; 
+
+        // ==========================================
+        
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score-display');
+        const startScreen = document.getElementById('start-screen');
+        const gameOverScreen = document.getElementById('game-over-screen');
+        const finalScoreText = document.getElementById('final-score');
+
+        // ゲームの状態
+        let gameState = 'START'; // START, PLAYING, GAMEOVER
+        let frames = 0;
+        let score = 0;
+        let gameSpeed = 3;
+
+        // 画像の読み込み処理
+        let playerImg = new Image();
+        let obstacleImg = new Image();
+        let playerImgLoaded = false;
+        let obstacleImgLoaded = false;
+
+        if (PLAYER_IMAGE_SRC) {
+            playerImg.src = PLAYER_IMAGE_SRC;
+            playerImg.onload = () => { playerImgLoaded = true; };
+        }
+        if (OBSTACLE_IMAGE_SRC) {
+            obstacleImg.src = OBSTACLE_IMAGE_SRC;
+            obstacleImg.onload = () => { obstacleImgLoaded = true; };
+        }
+
+        // キャンバスのリサイズ
+        function resizeCanvas() {
+            canvas.width = window.innerWidth > 480 ? 480 : window.innerWidth; // PCでもスマホ幅にする
+            canvas.height = window.innerHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // プレイヤー設定
+        const player = {
+            x: 50,
+            y: 150,
+            radius: 20, // 半径
+            velocity: 0,
+            gravity: 0.25,
+            jumpStrength: -6,
+            rotation: 0,
+
+            draw: function() {
+                ctx.save();
+                ctx.translate(this.x, this.y);
+                // 落下速度に応じて回転させる演出
+                this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
+                ctx.rotate(this.rotation);
+
+                if (playerImgLoaded) {
+                    // 画像がある場合（円形にクリップして表示）
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius * 1.5, 0, Math.PI * 2);
+                    ctx.clip();
+                    ctx.drawImage(playerImg, -this.radius * 1.5, -this.radius * 1.5, this.radius * 3, this.radius * 3);
+                } else {
+                    // 画像がない場合のデフォルト（黄色い顔）
+                    ctx.beginPath();
+                    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+                    ctx.fillStyle = "#FFD700";
+                    ctx.fill();
+                    ctx.strokeStyle = "#000";
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    // 目
+                    ctx.fillStyle = "#000";
+                    ctx.beginPath(); ctx.arc(8, -5, 3, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(10, -5, 3, 0, Math.PI*2); ctx.fill(); // 横顔っぽく
+                    // 口
+                    ctx.beginPath();
+                    ctx.arc(5, 5, 8, 0, Math.PI, false);
+                    ctx.stroke();
+                }
+
+                ctx.restore();
+            },
+
+            update: function() {
+                this.velocity += this.gravity;
+                this.y += this.velocity;
+
+                // 地面判定
+                if (this.y + this.radius >= canvas.height) {
+                    this.y = canvas.height - this.radius;
+                    gameOver();
+                }
+                // 天井判定
+                if (this.y - this.radius <= 0) {
+                    this.y = this.radius;
+                    this.velocity = 0;
+                }
+            },
+
+            jump: function() {
+                this.velocity = this.jumpStrength;
+            }
+        };
+
+        // 障害物管理
+        const pipes = {
+            items: [],
+            width: 50, // パイプの幅
+            gap: 170,  // 通り抜ける隙間の高さ
+            dx: 3,     // 移動速度
+
+            draw: function() {
+                for (let i = 0; i < this.items.length; i++) {
+                    let p = this.items[i];
+                    
+                    if (obstacleImgLoaded) {
+                        // 上の障害物（画像）
+                        // 画像を引き伸ばさないように並べるか、単純に描画する
+                        ctx.drawImage(obstacleImg, p.x, p.top - 600, this.width, 600); // 簡易的な描画
+                        
+                        // 下の障害物（画像）
+                        ctx.drawImage(obstacleImg, p.x, p.bottom, this.width, 600);
+                    } else {
+                        // 画像がない場合のデフォルト（緑のパイプ）
+                        ctx.fillStyle = "#2ecc71"; // 緑色
+                        ctx.strokeStyle = "#27ae60";
+                        ctx.lineWidth = 2;
+
+                        // 上のパイプ
+                        ctx.fillRect(p.x, 0, this.width, p.top);
+                        ctx.strokeRect(p.x, 0, this.width, p.top);
+
+                        // 下のパイプ
+                        ctx.fillRect(p.x, p.bottom, this.width, canvas.height - p.bottom);
+                        ctx.strokeRect(p.x, p.bottom, this.width, canvas.height - p.bottom);
+                        
+                        // パイプのキャップ（装飾）
+                        ctx.fillStyle = "#27ae60";
+                        ctx.fillRect(p.x - 2, p.top - 20, this.width + 4, 20); // 上のキャップ
+                        ctx.fillRect(p.x - 2, p.bottom, this.width + 4, 20);   // 下のキャップ
+                    }
+                }
+            },
+
+            update: function() {
+                // 一定間隔でパイプを追加 (100フレームごと)
+                if (frames % 120 === 0) {
+                    // 隙間の位置をランダムに
+                    // キャンバスの高さの20%〜80%の間に隙間を作る
+                    let _y = Math.random() * (canvas.height - this.gap - 100) + 50;
+                    this.items.push({
+                        x: canvas.width,
+                        top: _y,
+                        bottom: _y + this.gap,
+                        passed: false
+                    });
+                }
+
+                for (let i = 0; i < this.items.length; i++) {
+                    let p = this.items[i];
+                    p.x -= this.dx;
+
+                    // 衝突判定
+                    // X軸の重なり
+                    if (player.x + player.radius > p.x && player.x - player.radius < p.x + this.width) {
+                        // Y軸の重なり（上のパイプ または 下のパイプに当たっているか）
+                        if ((player.y - player.radius < p.top) || (player.y + player.radius > p.bottom)) {
+                            gameOver();
+                        }
+                    }
+
+                    // スコア加算（プレイヤーがパイプを通過したら）
+                    if (p.x + this.width < player.x && !p.passed) {
+                        score++;
+                        scoreDisplay.innerText = score;
+                        p.passed = true;
+                        
+                        // 少しずつ難しくする
+                        if(score % 5 === 0) this.dx += 0.5;
+                    }
+
+                    // 画面外に出たら削除
+                    if (p.x + this.width < 0) {
+                        this.items.shift();
+                        i--;
+                    }
+                }
+            },
+            
+            reset: function() {
+                this.items = [];
+                this.dx = 3;
+            }
+        };
+
+        // ゲームループ
+        function loop() {
+            if (gameState !== 'PLAYING') return;
+
+            // 背景クリア
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            pipes.update();
+            pipes.draw();
+
+            player.update();
+            player.draw();
+
+            frames++;
+            requestAnimationFrame(loop);
+        }
+
+        // ゲーム開始
+        function startGame() {
+            gameState = 'PLAYING';
+            startScreen.style.display = 'none';
+            scoreDisplay.style.display = 'block';
+            player.y = 150;
+            player.velocity = 0;
+            pipes.reset();
+            score = 0;
+            frames = 0;
+            scoreDisplay.innerText = score;
+            loop();
+        }
+
+        // ゲームオーバー
+        function gameOver() {
+            gameState = 'GAMEOVER';
+            finalScoreText.innerText = score;
+            gameOverScreen.style.display = 'block';
+            scoreDisplay.style.display = 'none';
+        }
+
+        // リセット
+        function resetGame() {
+            gameOverScreen.style.display = 'none';
+            startGame();
+        }
+
+        // 操作イベント設定
+        window.addEventListener('keydown', function(e) {
+            if (e.code === 'Space') {
+                if (gameState === 'PLAYING') {
+                    player.jump();
+                } else if (gameState !== 'PLAYING' && e.repeat === false) {
+                    // スペースキーでスタート/リスタートも可能にする
+                    if (startScreen.style.display !== 'none') startGame();
+                    if (gameOverScreen.style.display !== 'none') resetGame();
+                }
+            }
+        });
+
+        window.addEventListener('touchstart', function(e) {
+            if (gameState === 'PLAYING') {
+                player.jump();
+            }
+            // タップ時のデフォルト動作（スクロールなど）を防ぐ
+            e.preventDefault(); 
+        }, {passive: false});
+        
+        // マウスクリックでもジャンプ
+        window.addEventListener('mousedown', function(e) {
+            if (gameState === 'PLAYING') {
+                player.jump();
+            }
+        });
+
+        // 初期描画
+        resizeCanvas();
+        ctx.fillStyle = "#333"; 
+        // 背景だけ描画しておく
+        ctx.clearRect(0,0, canvas.width, canvas.height);
+
+    </script>
+</body>
+</html>
