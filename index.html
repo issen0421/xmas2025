@@ -22,7 +22,22 @@
             background-size: cover;
             background-position: center;
             background-repeat: no-repeat;
+            transition: background 1s ease; /* 背景切り替えを滑らかに */
         }
+        
+        /* ▼▼▼ レインボー背景用のアニメーション ▼▼▼ */
+        @keyframes rainbow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .rainbow-bg {
+            /* !important で元の背景画像設定を上書きして虹色にする */
+            background: linear-gradient(270deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3) !important;
+            background-size: 400% 400% !important;
+            animation: rainbow 3s ease infinite !important;
+        }
+
         #ui-layer {
             position: absolute;
             top: 0;
@@ -38,18 +53,21 @@
         }
         .message-box {
             background: rgba(255, 255, 255, 0.95);
-            padding: 30px 50px;
+            padding: 30px 40px; /* 横幅の余裕を調整 */
             border-radius: 15px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.3);
             pointer-events: auto; /* ボタンなどは押せるようにする */
-            max-width: 400px;
+            max-width: 90%; /* スマホではみ出さないように */
+            width: 400px;
             /* UIも少し拡大縮小に対応させる */
             transform-origin: center;
         }
         h1 {
             margin: 0 0 15px 0;
             color: #333;
-            font-size: 32px;
+            /* 文字サイズを調整して一行に収める */
+            font-size: 22px; 
+            white-space: nowrap; /* 改行禁止 */
         }
         p {
             color: #555;
@@ -68,6 +86,8 @@
             cursor: pointer;
             transition: all 0.2s;
             box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+            /* スマホでタップしやすいようにタッチ操作を有効化 */
+            touch-action: manipulation;
         }
         button:hover {
             background: #f4511e;
@@ -137,20 +157,15 @@
         // ==========================================
         // ▼▼▼ 音声の設定 ▼▼▼
         // ==========================================
-        // 音声ファイルを用意して、ファイル名を書いてください。
-        // 例: './jump.mp3'
-        // 使わない場合は '' (空文字) のままにしてください。
-
         const SOUND_JUMP_SRC = './ニュッ2.mp3';      // ジャンプした時の音
         const SOUND_GAMEOVER_SRC = './「残念」.mp3';  // ぶつかった時の音
-        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3';     // スコアが入った時の音
+        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3';     // スコアが入った時の音
 
         // ==========================================
         // ▼▼▼ サイズと難易度の設定 ▼▼▼
         // ==========================================
         
         // ★重要★: これらの数値は「高さ720pxの画面」を基準とした大きさです。
-        // 実際の画面サイズに合わせて自動的に拡大縮小されます。
         
         // 1. プレイヤーの大きさ（半径）
         const PLAYER_RADIUS = 30; 
@@ -163,6 +178,9 @@
         
         // 4. 敵が出る頻度（距離）
         const SPAWN_INTERVAL = 350;
+
+        // 5. 最大レベル（これ以上は上がらない）
+        const MAX_LEVEL = 20;
 
         // ==========================================
         
@@ -191,7 +209,7 @@
             const sound = sounds[type];
             if (sound && sound.src) {
                 sound.currentTime = 0;
-                sound.volume = 1; // 念のため音量を1に
+                sound.volume = 1;
                 sound.play().catch(e => {
                     console.log('Sound play failed:', e);
                 });
@@ -282,7 +300,6 @@
                     ctx.strokeStyle = "#333";
                     ctx.lineWidth = 3;
                     ctx.stroke();
-                    // 顔パーツ
                     ctx.fillStyle = "#333";
                     ctx.beginPath(); ctx.arc(10, -8, 4, 0, Math.PI*2); ctx.fill();
                     ctx.beginPath(); ctx.arc(12, -8, 4, 0, Math.PI*2); ctx.fill();
@@ -310,7 +327,7 @@
 
             jump: function() {
                 this.velocity = JUMP_STRENGTH;
-                playSound('jump'); // ★ジャンプ音再生
+                playSound('jump');
             }
         };
 
@@ -364,10 +381,10 @@
                 let lastItem = this.items.length > 0 ? this.items[this.items.length - 1] : null;
                 let spawnDist = SPAWN_INTERVAL - (Math.random() * 100); 
 
-                // 出現判定（logicalWidthを使用）
+                // 出現判定
                 if (!lastItem || logicalWidth - (lastItem.x + this.size) >= spawnDist) {
                     let minY = 0; 
-                    let maxY = BASE_HEIGHT - this.size; // BASE_HEIGHTを使用
+                    let maxY = BASE_HEIGHT - this.size;
                     let _y = Math.random() * (maxY - minY) + minY;
                     
                     let selectedImg = null;
@@ -381,7 +398,7 @@
                     }
 
                     this.items.push({
-                        x: logicalWidth, // 論理的な右端から出現
+                        x: logicalWidth,
                         y: _y,
                         img: selectedImg,
                         passed: false
@@ -403,9 +420,14 @@
                     if (o.x + this.size < player.x && !o.passed) {
                         score += 10;
                         scoreDisplay.innerText = score;
-                        playSound('score'); // ★スコア音再生
+                        playSound('score');
                         o.passed = true;
                         
+                        // レインボー背景判定 (1000点以上)
+                        if (score >= 1000) {
+                            canvas.classList.add('rainbow-bg');
+                        }
+
                         if (score % LEVEL_STEP === 0) {
                             levelUp();
                         }
@@ -424,6 +446,13 @@
         };
 
         function levelUp() {
+            // MAXレベルチェック
+            if (currentLevel >= MAX_LEVEL) {
+                levelDisplay.innerText = "Lv.MAX";
+                levelDisplay.style.color = "#ff0000"; // MAX時は赤くする
+                return; // これ以上レベルもスピードも上げない
+            }
+
             currentLevel++;
             if (gameSpeed < 15) {
                 gameSpeed += 0.8;
@@ -436,14 +465,14 @@
         function loop() {
             if (gameState !== 'PLAYING') return;
 
-            // 1. ピクセル単位で画面クリア（前のフレームの絵を消す）
+            // 1. ピクセル単位で画面クリア
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 2. 縮尺を適用（ここから下の描画はすべて scaleRatio 倍になる）
+            // 2. 縮尺を適用
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
 
-            // 3. ゲーム要素の描画（論理座標系で描く）
+            // 3. ゲーム要素の描画
             obstacles.update();
             obstacles.draw();
             player.update();
@@ -458,24 +487,25 @@
             scoreDisplay.style.display = 'block';
             levelDisplay.style.display = 'block';
             
+            // リセット処理
             player.y = BASE_HEIGHT / 2;
             player.velocity = 0;
             obstacles.reset();
             score = 0;
             currentLevel = 1;
             gameSpeed = INITIAL_SPEED;
+            canvas.classList.remove('rainbow-bg'); // レインボー解除
             
             scoreDisplay.innerText = score;
             levelDisplay.innerText = "Lv.1";
-
-            // ★ここで無理に音声を再生する処理を削除しました
+            levelDisplay.style.color = "white";
 
             loop();
         }
 
         function gameOver() {
             gameState = 'GAMEOVER';
-            playSound('gameover'); // ★ゲームオーバー音再生
+            playSound('gameover');
             finalScoreText.innerText = score;
             gameOverScreen.style.display = 'block';
             scoreDisplay.style.display = 'none';
@@ -487,6 +517,7 @@
             startGame();
         }
 
+        // キーボード操作
         window.addEventListener('keydown', function(e) {
             if (e.code === 'Space') {
                 if (gameState === 'PLAYING') {
@@ -499,17 +530,27 @@
             }
         });
 
+        // マウス操作
         window.addEventListener('mousedown', function(e) {
             if (gameState === 'PLAYING') {
                 player.jump();
             }
         });
         
+        // スマホタッチ操作 (改善版)
         window.addEventListener('touchstart', function(e) {
+            // ボタンのタップはボタンのonclickに任せる
+            if (e.target.tagName === 'BUTTON') return;
+
+            e.preventDefault(); // スクロール防止
+
             if (gameState === 'PLAYING') {
                 player.jump();
+            } else if (gameState !== 'PLAYING') {
+                // 画面タップでもスタート/リセット可能に
+                if (startScreen.style.display !== 'none') startGame();
+                if (gameOverScreen.style.display !== 'none') resetGame();
             }
-            e.preventDefault();
         }, {passive: false});
 
         resizeCanvas();
