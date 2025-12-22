@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Face Flappy Game - PC Edition</title>
+    <title>Face Flappy Game - Synchronized Mode</title>
     <style>
         body {
             margin: 0;
@@ -16,8 +16,12 @@
         #gameCanvas {
             display: block;
             margin: 0 auto;
-            /* 背景グラデーション */
+            /* デフォルトの背景（画像がない場合用） */
             background: linear-gradient(to bottom, #70c5ce 0%, #ffffff 100%); 
+            /* 画像が設定されたときに綺麗に広げる設定 */
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
         }
         #ui-layer {
             position: absolute;
@@ -108,8 +112,10 @@
 
     <div id="ui-layer">
         <div id="start-screen" class="message-box">
-            <h1>顔面フラッピー<br>(ワイド版)</h1>
-            <p>スペースキー または クリックでジャンプ！<br>10本越えるたびに難しくなるよ。</p>
+            <h1>顔面フラッピー<br>(進化モード)</h1>
+            <p>前から飛んでくる友達(敵)を避けろ！<br>
+               <span style="font-size: 0.9em; color: #ff5722;">★15点ごとにレベルアップして<br>新しい敵キャラが登場するよ！</span>
+            </p>
             <button onclick="startGame()">スタート！</button>
         </div>
         <div id="game-over-screen" class="message-box" style="display: none;">
@@ -128,9 +134,22 @@
         // 例: './friend_face.png' 
         const PLAYER_IMAGE_SRC = './Rabuka.png'; 
 
-        // 2. 障害物（別の友達や敵）の画像URL
-        // 例: './obstacle.png'
-        const OBSTACLE_IMAGE_SRC = './yama.png'; 
+        // 2. 敵キャラ（飛んでくる友達）の画像リスト
+        // ★重要★: 上から順番に解禁されていきます！
+        // 1番目は最初から登場、2番目はLv2(15点〜)、3番目はLv3(30点〜)...
+        const ENEMY_IMAGE_SOURCES = [
+            './issen.png', // 1つ目の画像 (Lv1: 0点〜)
+            './TD.png', // 2つ目の画像 (Lv2: 15点〜)
+            './yama2.png', // 3つ目の画像 (Lv3: 30点〜)
+            './houou.jpeg'  // 4つ目の画像 (Lv4: 45点〜)
+            './rugia.jpeg'  // 5つ目の画像 (Lv5: 60点〜)...
+        ];
+
+        // 3. 背景画像のURL
+        const BACKGROUND_IMAGE_SRC = '';
+
+        // 4. レベルアップの区切り（何点ごとに難しくなり、敵が増えるか）
+        const LEVEL_STEP = 15;
 
         // ==========================================
         
@@ -142,10 +161,15 @@
         const gameOverScreen = document.getElementById('game-over-screen');
         const finalScoreText = document.getElementById('final-score');
 
+        // 背景画像の設定適用
+        if (BACKGROUND_IMAGE_SRC && BACKGROUND_IMAGE_SRC.trim() !== '') {
+            canvas.style.backgroundImage = `url('${BACKGROUND_IMAGE_SRC}')`;
+        }
+
         // ゲームの設定値
-        const INITIAL_SPEED = 4;     // 初期の横スクロール速度
-        const INITIAL_GAP = 220;     // 初期の隙間の広さ（広いほど簡単）
-        const PIPE_INTERVAL = 350;   // パイプ同士の横の間隔
+        const INITIAL_SPEED = 5;     // 初期の横スクロール速度
+        // 敵が出現する距離間隔（ピクセル単位）
+        const SPAWN_INTERVAL = 350;  
         const GRAVITY = 0.4;         // 重力
         const JUMP_STRENGTH = -8;    // ジャンプ力
 
@@ -155,22 +179,26 @@
         
         // 動的な難易度パラメータ
         let gameSpeed = INITIAL_SPEED;
-        let pipeGap = INITIAL_GAP;
-
-        // 画像ロード
+        
+        // 画像ロード処理
         let playerImg = new Image();
-        let obstacleImg = new Image();
         let playerImgLoaded = false;
-        let obstacleImgLoaded = false;
-
+        
+        // プレイヤー画像の読み込み
         if (PLAYER_IMAGE_SRC) {
             playerImg.src = PLAYER_IMAGE_SRC;
             playerImg.onload = () => { playerImgLoaded = true; };
         }
-        if (OBSTACLE_IMAGE_SRC) {
-            obstacleImg.src = OBSTACLE_IMAGE_SRC;
-            obstacleImg.onload = () => { obstacleImgLoaded = true; };
-        }
+
+        // 敵画像の読み込み（複数対応）
+        let enemyImages = [];
+        const validEnemySources = ENEMY_IMAGE_SOURCES.filter(src => src && src.trim() !== '');
+        
+        validEnemySources.forEach(src => {
+            const img = new Image();
+            img.src = src;
+            enemyImages.push(img);
+        });
 
         // 画面リサイズ対応
         function resizeCanvas() {
@@ -182,9 +210,9 @@
 
         // プレイヤーオブジェクト
         const player = {
-            x: 100, // パソコン画面なので少し右寄りに配置
+            x: 100, 
             y: 300,
-            radius: 25, // 少し大きめ
+            radius: 25, 
             velocity: 0,
             rotation: 0,
 
@@ -220,13 +248,16 @@
                 this.velocity += GRAVITY;
                 this.y += this.velocity;
 
+                // 地面判定
                 if (this.y + this.radius >= canvas.height) {
                     this.y = canvas.height - this.radius;
                     gameOver();
                 }
+                
+                // 天井判定（天井に当たると下に弾かれる）
                 if (this.y - this.radius <= 0) {
                     this.y = this.radius;
-                    this.velocity = 0;
+                    this.velocity = 2; 
                 }
             },
 
@@ -235,84 +266,127 @@
             }
         };
 
-        // パイプ管理
-        const pipes = {
+        // 障害物（飛んでくる敵）管理
+        const obstacles = {
             items: [],
-            width: 70, // パソコン画面に合わせて少し太く
+            size: 60, // 敵のサイズ
 
             draw: function() {
                 for (let i = 0; i < this.items.length; i++) {
-                    let p = this.items[i];
+                    let o = this.items[i];
                     
-                    if (obstacleImgLoaded) {
-                        ctx.drawImage(obstacleImg, p.x, p.top - 800, this.width, 800); 
-                        ctx.drawImage(obstacleImg, p.x, p.bottom, this.width, 800);
+                    ctx.save();
+                    // 敵の位置へ移動
+                    ctx.translate(o.x + this.size/2, o.y + this.size/2);
+                    
+                    // 敵画像がある場合
+                    if (o.img) {
+                        if (o.img.complete) {
+                            ctx.drawImage(o.img, -this.size/2, -this.size/2, this.size, this.size);
+                        } else {
+                            // ロード中なら代替描画
+                            this.drawDefaultEnemy(ctx, this.size);
+                        }
                     } else {
-                        // デフォルトのパイプ描画
-                        ctx.fillStyle = "#2ecc71"; 
-                        ctx.strokeStyle = "#27ae60";
-                        ctx.lineWidth = 3;
-
-                        // 上
-                        ctx.fillRect(p.x, 0, this.width, p.top);
-                        ctx.strokeRect(p.x, 0, this.width, p.top);
-                        // 下
-                        ctx.fillRect(p.x, p.bottom, this.width, canvas.height - p.bottom);
-                        ctx.strokeRect(p.x, p.bottom, this.width, canvas.height - p.bottom);
-                        
-                        // 装飾
-                        ctx.fillStyle = "#27ae60";
-                        ctx.fillRect(p.x - 4, p.top - 30, this.width + 8, 30); 
-                        ctx.fillRect(p.x - 4, p.bottom, this.width + 8, 30);   
+                        // デフォルトの敵
+                        this.drawDefaultEnemy(ctx, this.size);
                     }
+                    
+                    ctx.restore();
                 }
             },
 
+            drawDefaultEnemy: function(ctx, size) {
+                // 黒っぽい鳥のようなシルエット
+                ctx.fillStyle = "#333";
+                ctx.beginPath();
+                ctx.arc(0, 0, size/2 - 5, 0, Math.PI*2);
+                ctx.fill();
+                // くちばし
+                ctx.fillStyle = "#f39c12";
+                ctx.beginPath();
+                ctx.moveTo(-10, 5);
+                ctx.lineTo(-size/2 - 5, 10);
+                ctx.lineTo(-10, 15);
+                ctx.fill();
+                // 目
+                ctx.fillStyle = "white";
+                ctx.beginPath(); ctx.arc(-5, -5, 8, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = "black";
+                ctx.beginPath(); ctx.arc(-8, -5, 3, 0, Math.PI*2); ctx.fill();
+                // 眉毛
+                ctx.strokeStyle = "red";
+                ctx.lineWidth = 2;
+                ctx.beginPath(); ctx.moveTo(-15, -12); ctx.lineTo(5, -2); ctx.stroke();
+            },
+
             update: function() {
-                // パイプの生成ロジック：距離ベース
-                // 最後のパイプが存在しない、または画面右端から一定距離離れたら次を生成
-                let lastPipe = this.items.length > 0 ? this.items[this.items.length - 1] : null;
+                // 生成ロジック
+                let lastItem = this.items.length > 0 ? this.items[this.items.length - 1] : null;
                 
-                if (!lastPipe || canvas.width - (lastPipe.x + this.width) >= PIPE_INTERVAL) {
-                    // 隙間の位置をランダムに決定
-                    // 現在のpipeGap設定を使う
-                    let minTop = 50;
-                    let maxTop = canvas.height - pipeGap - 50;
-                    let _y = Math.random() * (maxTop - minTop) + minTop;
+                // SPAWN_INTERVAL から、0〜100 のランダムな値を引いて距離を決めています
+                let spawnDist = SPAWN_INTERVAL - (Math.random() * 100); 
+
+                if (!lastItem || canvas.width - (lastItem.x + this.size) >= spawnDist) {
+                    // 画面の一番上(0)から一番下まで出現範囲
+                    let minY = 0; 
+                    let maxY = canvas.height - this.size;
                     
+                    let _y = Math.random() * (maxY - minY) + minY;
+                    
+                    // ▼▼▼ 画像選択ロジック ▼▼▼
+                    let selectedImg = null;
+                    if (enemyImages.length > 0) {
+                        // 現在のスコアに基づいて、解禁されている敵の数を計算
+                        // 例: LEVEL_STEP=15の場合
+                        // 0~14点=1体, 15~29点=2体, 30~44点=3体...
+                        let unlockedCount = Math.floor(score / LEVEL_STEP) + 1;
+                        
+                        // 用意されている画像の枚数を超えないように制限
+                        if (unlockedCount > enemyImages.length) {
+                            unlockedCount = enemyImages.length;
+                        }
+
+                        // 解禁済みの範囲からランダムに選択
+                        const idx = Math.floor(Math.random() * unlockedCount);
+                        selectedImg = enemyImages[idx];
+                    }
+
                     this.items.push({
                         x: canvas.width,
-                        top: _y,
-                        bottom: _y + pipeGap, // その時点の難易度設定を適用
+                        y: _y,
+                        img: selectedImg,
                         passed: false
                     });
                 }
 
                 for (let i = 0; i < this.items.length; i++) {
-                    let p = this.items[i];
-                    p.x -= gameSpeed; // 現在のスピードで移動
+                    let o = this.items[i];
+                    o.x -= gameSpeed;
 
                     // 衝突判定
-                    if (player.x + player.radius > p.x + 5 && player.x - player.radius < p.x + this.width - 5) {
-                        if ((player.y - player.radius < p.top) || (player.y + player.radius > p.bottom)) {
-                            gameOver();
-                        }
+                    let dx = (o.x + this.size/2) - player.x;
+                    let dy = (o.y + this.size/2) - player.y;
+                    let distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < player.radius + (this.size / 2 * 0.8)) {
+                        gameOver();
                     }
 
-                    // スコア加算とレベルアップ
-                    if (p.x + this.width < player.x && !p.passed) {
+                    // スコア加算
+                    if (o.x + this.size < player.x && !o.passed) {
                         score++;
                         scoreDisplay.innerText = score;
-                        p.passed = true;
+                        o.passed = true;
                         
-                        // 10点ごとにレベルアップ
-                        if (score % 10 === 0) {
+                        // LEVEL_STEP(15点)ごとにレベルアップ
+                        if (score % LEVEL_STEP === 0) {
                             levelUp();
                         }
                     }
 
                     // 画面外削除
-                    if (p.x + this.width < 0) {
+                    if (o.x + this.size < 0) {
                         this.items.shift();
                         i--;
                     }
@@ -328,18 +402,14 @@
             currentLevel++;
             
             // 難易度調整ロジック
-            // 速度アップ（最大8まで）
-            if (gameSpeed < 8) {
-                gameSpeed += 0.5;
-            }
-            // 隙間を狭く（最小130まで）
-            if (pipeGap > 130) {
-                pipeGap -= 10;
+            // 速度アップ
+            if (gameSpeed < 15) {
+                gameSpeed += 0.8;
             }
 
             // レベル表示の更新と演出
             levelDisplay.innerText = "Lv." + currentLevel;
-            levelDisplay.style.color = "#ffeb3b"; // 黄色く光らせる
+            levelDisplay.style.color = "#ffeb3b"; 
             setTimeout(() => { levelDisplay.style.color = "white"; }, 500);
         }
 
@@ -348,8 +418,8 @@
 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            pipes.update();
-            pipes.draw();
+            obstacles.update();
+            obstacles.draw();
             player.update();
             player.draw();
 
@@ -362,16 +432,13 @@
             scoreDisplay.style.display = 'block';
             levelDisplay.style.display = 'block';
             
-            // リセット
             player.y = canvas.height / 2;
             player.velocity = 0;
-            pipes.reset();
+            obstacles.reset();
             score = 0;
             currentLevel = 1;
             
-            // 初期難易度に戻す
             gameSpeed = INITIAL_SPEED;
-            pipeGap = INITIAL_GAP;
             
             scoreDisplay.innerText = score;
             levelDisplay.innerText = "Lv.1";
@@ -401,7 +468,7 @@
                     if (startScreen.style.display !== 'none') startGame();
                     if (gameOverScreen.style.display !== 'none') resetGame();
                 }
-                e.preventDefault(); // スクロール防止
+                e.preventDefault(); 
             }
         });
 
@@ -420,8 +487,11 @@
 
         // 初期描画
         resizeCanvas();
-        ctx.fillStyle = "#333"; 
-        ctx.clearRect(0,0, canvas.width, canvas.height);
+        // 背景画像がない場合のデフォルト
+        if (!BACKGROUND_IMAGE_SRC) {
+            ctx.fillStyle = "#333"; 
+            ctx.clearRect(0,0, canvas.width, canvas.height);
+        }
 
     </script>
 </body>
