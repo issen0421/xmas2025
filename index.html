@@ -11,15 +11,18 @@
             background-color: #333;
             overflow: hidden; 
             font-family: 'Arial', sans-serif;
-            touch-action: none;
+            touch-action: none; /* スマホでのスクロールやズームを無効化 */
             user-select: none;
             -webkit-user-select: none;
+            -webkit-tap-highlight-color: transparent; /* タップ時のハイライトを消す */
         }
         #gameCanvas {
             display: block;
             margin: 0 auto;
             background: linear-gradient(to bottom, #70c5ce 0%, #ffffff 100%); 
             transition: background 1s ease;
+            /* 描画の最適化ヒント */
+            image-rendering: -webkit-optimize-contrast; 
         }
         
         /* レインボー背景アニメーション */
@@ -56,6 +59,7 @@
             max-width: 90%; 
             width: 350px;
             transform-origin: center;
+            will-change: transform; /* アニメーション最適化 */
         }
         h1 {
             margin: 0 0 10px 0;
@@ -104,17 +108,12 @@
             font-weight: bold;
             border-radius: 30px;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: transform 0.1s;
             box-shadow: 0 4px 6px rgba(0,0,0,0.2);
             touch-action: manipulation;
         }
-        button:hover {
-            background: #f4511e;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 8px rgba(0,0,0,0.25);
-        }
         button:active {
-            transform: translateY(0);
+            transform: scale(0.95);
         }
         #score-display {
             position: absolute;
@@ -214,6 +213,7 @@
         // ==========================================
         
         const canvas = document.getElementById('gameCanvas');
+        // alpha: false は背景が不透明であることをブラウザに伝え、描画を高速化する
         const ctx = canvas.getContext('2d', { alpha: false }); 
         const scoreDisplay = document.getElementById('score-display');
         const levelDisplay = document.getElementById('level-display');
@@ -227,7 +227,6 @@
         let bgmVolume = parseFloat(bgmSlider.value);
         let seVolume = parseFloat(seSlider.value);
 
-        // 音量スライダーのイベントリスナー
         bgmSlider.addEventListener('input', (e) => {
             bgmVolume = parseFloat(e.target.value);
             if (sounds.bgmNormal) sounds.bgmNormal.volume = bgmVolume;
@@ -237,7 +236,7 @@
             seVolume = parseFloat(e.target.value);
         });
 
-        // 音声オブジェクト管理
+        // 音声管理
         const sounds = {
             jump: new Audio(),
             gameover: new Audio(),
@@ -247,7 +246,6 @@
             custom: {} 
         };
         
-        // 読み込み関数
         function loadAudio(audioObj, src, isBgm) {
             if (!src) return;
             audioObj.src = src;
@@ -269,13 +267,14 @@
             }
         });
 
-        // SE再生
+        // SE再生（連打制限付き）
         let lastSeTime = 0;
         function playSound(type, enemyIndex = null) {
             if (seVolume <= 0) return;
 
             const now = Date.now();
-            if (type === 'score' && now - lastSeTime < 50) return; 
+            // スコア音は少し間引く（負荷軽減）
+            if (type === 'score' && now - lastSeTime < 80) return; 
             if (type === 'score') lastSeTime = now;
 
             let sound = null;
@@ -286,6 +285,9 @@
             }
 
             if (sound && sound.src) {
+                // currentTime=0 は負荷になる場合があるが、SEのレスポンスには必要
+                // ただし、再生中でない場合のみリセットするなど工夫も可能だが、
+                // ここではシンプルにセットする
                 sound.currentTime = 0;
                 sound.volume = seVolume;
                 sound.play().catch(() => {});
@@ -347,8 +349,53 @@
         let gameSpeed = INITIAL_SPEED;
         let bgX = 0; 
 
-        // 画像ロード
-        function loadImage(src) {
+        // ★高速化のための画像事前処理（キャッシュ）
+        // 画像を読み込んだら、指定サイズにリサイズ＆円形加工したものをメモリ上に作る
+        const imageCache = {
+            player: null,
+            bgNormal: null,
+            bgFever: null,
+            enemies: []
+        };
+
+        // 画像処理用キャンバス（使い回す）
+        const tempCanvas = document.createElement('canvas');
+        const tempCtx = tempCanvas.getContext('2d');
+
+        function createProcessedImage(imgSrc, width, height, isCircle = false) {
+            if (!imgSrc) return { img: null, loaded: false };
+            
+            const rawImg = new Image();
+            const result = { img: null, loaded: false }; // 初期状態
+
+            rawImg.onload = () => {
+                // メモリ上のキャンバスで加工
+                tempCanvas.width = width;
+                tempCanvas.height = height;
+                tempCtx.clearRect(0, 0, width, height);
+
+                if (isCircle) {
+                    tempCtx.beginPath();
+                    tempCtx.arc(width/2, height/2, width/2, 0, Math.PI * 2);
+                    tempCtx.clip();
+                }
+                tempCtx.drawImage(rawImg, 0, 0, width, height);
+
+                // 加工した画像を新しいImageオブジェクトとして保存
+                const processed = new Image();
+                processed.src = tempCanvas.toDataURL();
+                result.img = processed;
+                result.loaded = true;
+            };
+            rawImg.src = imgSrc;
+            return result;
+        }
+
+        // プレイヤー画像のキャッシュ作成 (直径 = 半径*2)
+        imageCache.player = createProcessedImage(PLAYER_IMAGE_SRC, PLAYER_RADIUS * 3, PLAYER_RADIUS * 3, true);
+
+        // 背景画像の読み込み（背景はサイズが大きいのでそのまま読む）
+        function loadBgImage(src) {
             if (!src) return { img: null, loaded: false };
             const img = new Image();
             const obj = { img: img, loaded: false };
@@ -356,17 +403,21 @@
             img.src = src;
             return obj;
         }
+        imageCache.bgNormal = loadBgImage(BACKGROUND_IMAGE_NORMAL);
+        imageCache.bgFever = loadBgImage(BACKGROUND_IMAGE_FEVER);
 
-        const playerObj = loadImage(PLAYER_IMAGE_SRC);
-        const bgNormalObj = loadImage(BACKGROUND_IMAGE_NORMAL);
-        const bgFeverObj = loadImage(BACKGROUND_IMAGE_FEVER);
-
-        let enemies = ENEMY_DATA.map((data, idx) => {
+        // 敵画像のキャッシュ作成
+        ENEMY_DATA.forEach((data, idx) => {
             if (data.src) {
-                const obj = loadImage(data.src);
-                return { img: obj.img, size: data.size, loadedObj: obj, originalIndex: idx };
+                // 指定サイズで事前にリサイズしておく
+                imageCache.enemies.push({ 
+                    data: createProcessedImage(data.src, data.size, data.size, false), // 敵は円形カットしない（必要ならtrueへ）
+                    size: data.size,
+                    originalIndex: idx 
+                });
+            } else {
+                imageCache.enemies.push({ data: { img: null, loaded: true }, size: data.size, originalIndex: idx });
             }
-            return { img: null, size: data.size, loadedObj: {loaded: true}, originalIndex: idx };
         });
 
         // リサイズ処理
@@ -393,21 +444,22 @@
             rotation: 0,
 
             draw: function() {
-                ctx.save();
+                // 座標を整数化（アンチエイリアス負荷軽減）
                 const drawX = Math.floor(this.x);
                 const drawY = Math.floor(this.y);
                 
+                // 回転処理は必要なので save/restore は使うが、clipは使わない
+                ctx.save();
                 ctx.translate(drawX, drawY);
                 this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
                 ctx.rotate(this.rotation);
 
-                if (playerObj.loaded) {
-                    ctx.beginPath();
-                    ctx.arc(0, 0, this.radius * 1.5, 0, Math.PI * 2);
-                    ctx.clip();
-                    const s = Math.floor(this.radius * 1.5);
-                    ctx.drawImage(playerObj.img, -s, -s, s * 2, s * 2);
+                if (imageCache.player.loaded) {
+                    // 加工済み画像を描画するだけ（高速）
+                    const size = this.radius * 3; // キャッシュ作成時のサイズに合わせる
+                    ctx.drawImage(imageCache.player.img, -size/2, -size/2, size, size);
                 } else {
+                    // 読み込み前や画像なしの場合のフォールバック
                     ctx.beginPath();
                     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
                     ctx.fillStyle = "#FFD700";
@@ -447,23 +499,25 @@
                 for (let i = 0; i < this.items.length; i++) {
                     let o = this.items[i];
                     
+                    // 画面外描画スキップ（完全に見えていないもの）
                     if (o.x + o.size < -50) continue; 
                     if (o.x > logicalWidth + 50) continue;
 
-                    ctx.save();
-                    const drawX = Math.floor(o.x + o.size/2);
-                    const drawY = Math.floor(o.y + o.size/2);
+                    // 回転しないので save/restore を省略し、直接座標計算して描画（最速）
+                    const drawX = Math.floor(o.x);
+                    const drawY = Math.floor(o.y);
                     const size = Math.floor(o.size);
 
-                    ctx.translate(drawX, drawY);
-                    
-                    if (o.enemyData && o.enemyData.loadedObj.loaded) {
-                         ctx.drawImage(o.enemyData.img, -size/2, -size/2, size, size);
+                    if (o.enemyCache && o.enemyCache.data.loaded) {
+                         // 事前リサイズ済みの画像を描画
+                         ctx.drawImage(o.enemyCache.data.img, drawX, drawY);
                     } else {
+                        // デフォルト敵
                         ctx.fillStyle = "#333";
-                        ctx.beginPath(); ctx.arc(0, 0, size/2, 0, Math.PI*2); ctx.fill();
+                        ctx.beginPath(); 
+                        ctx.arc(drawX + size/2, drawY + size/2, size/2, 0, Math.PI*2); 
+                        ctx.fill();
                     }
-                    ctx.restore();
                 }
             },
 
@@ -472,15 +526,15 @@
                 let spawnDist = SPAWN_INTERVAL - (Math.random() * 100); 
 
                 if (!lastItem || logicalWidth - (lastItem.x + lastItem.size) >= spawnDist) {
-                    let selectedEnemy = null;
-                    if (enemies.length > 0) {
+                    let selectedCache = null;
+                    if (imageCache.enemies.length > 0) {
                         let unlockedCount = Math.floor(score / LEVEL_STEP) + 1;
-                        if (unlockedCount > enemies.length) unlockedCount = enemies.length;
+                        if (unlockedCount > imageCache.enemies.length) unlockedCount = imageCache.enemies.length;
                         const idx = Math.floor(Math.random() * unlockedCount);
-                        selectedEnemy = enemies[idx];
+                        selectedCache = imageCache.enemies[idx];
                     }
 
-                    let currentSize = selectedEnemy ? selectedEnemy.size : 100;
+                    let currentSize = selectedCache ? selectedCache.size : 100;
                     let minY = 0; 
                     let maxY = BASE_HEIGHT - currentSize;
                     let _y = Math.random() * (maxY - minY) + minY;
@@ -489,7 +543,7 @@
                         x: logicalWidth,
                         y: _y,
                         size: currentSize,
-                        enemyData: selectedEnemy,
+                        enemyCache: selectedCache, // キャッシュデータを参照
                         passed: false
                     });
                 }
@@ -498,8 +552,11 @@
                     let o = this.items[i];
                     o.x -= gameSpeed;
 
-                    let dx = (o.x + o.size/2) - player.x;
-                    let dy = (o.y + o.size/2) - player.y;
+                    // 衝突判定（中心座標で計算）
+                    let centerX = o.x + o.size/2;
+                    let centerY = o.y + o.size/2;
+                    let dx = centerX - player.x;
+                    let dy = centerY - player.y;
                     let distSq = dx*dx + dy*dy;
                     let minDist = player.radius + (o.size / 2 * 0.8);
 
@@ -511,7 +568,7 @@
                         score += 10;
                         scoreDisplay.innerText = score;
                         
-                        let eIdx = (o.enemyData) ? o.enemyData.originalIndex : null;
+                        let eIdx = (o.enemyCache) ? o.enemyCache.originalIndex : null;
                         playSound('score', eIdx);
                         
                         o.passed = true;
@@ -533,7 +590,7 @@
 
         function checkGameState() {
             if (score >= 1000) {
-                if (BACKGROUND_IMAGE_FEVER && bgFeverObj.loaded) {
+                if (BACKGROUND_IMAGE_FEVER && imageCache.bgFever.loaded) {
                     canvas.classList.remove('rainbow-bg');
                 } else {
                     canvas.classList.add('rainbow-bg');
@@ -547,10 +604,10 @@
 
         function drawBackground() {
             let img = null;
-            if (score >= 1000 && bgFeverObj.loaded) {
-                img = bgFeverObj.img;
-            } else if (bgNormalObj.loaded) {
-                img = bgNormalObj.img;
+            if (score >= 1000 && imageCache.bgFever.loaded) {
+                img = imageCache.bgFever.img;
+            } else if (imageCache.bgNormal.loaded) {
+                img = imageCache.bgNormal.img;
             }
 
             if (img) {
@@ -585,16 +642,19 @@
         function loop() {
             if (gameState !== 'PLAYING') return;
 
+            // 1. 座標リセット & クリア
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+            // 2. 縮尺適用
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
 
+            // 3. 描画
             drawBackground();
-            obstacles.update();
-            obstacles.draw();
-            player.update();
-            player.draw();
+            obstacles.update(); // 敵の移動計算
+            obstacles.draw();   // 敵の描画
+            player.update();    // プレイヤーの移動計算
+            player.draw();      // プレイヤーの描画
 
             requestAnimationFrame(loop);
         }
@@ -632,34 +692,28 @@
             levelDisplay.style.display = 'none';
         }
 
-        // ★タイトルに戻る関数（リセット用）
         function backToTitle() {
             gameOverScreen.style.display = 'none';
-            startScreen.style.display = 'block'; // タイトル画面を表示
+            startScreen.style.display = 'block'; 
             scoreDisplay.style.display = 'none';
             levelDisplay.style.display = 'none';
             
-            // 背景リセット
             canvas.classList.remove('rainbow-bg');
             gameState = 'START';
             
-            // 背景を一回クリアしておく
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
 
-        // イベントリスナー
         const handleJump = (e) => {
             if (e.type === 'keydown' && e.code !== 'Space') return;
             if (e.type === 'touchstart' && e.target.tagName === 'BUTTON') return;
-            if (e.target.type === 'range') return; // スライダー操作時はジャンプさせない
+            if (e.target.type === 'range') return;
             if (e.type !== 'mousedown' && e.cancelable) e.preventDefault(); 
 
             if (gameState === 'PLAYING') {
                 player.jump();
             }
-            // タイトルやリザルト画面での誤操作を防ぐため、ここでの画面クリックによる遷移は削除
-            // ボタン操作のみに限定します
         };
 
         window.addEventListener('keydown', handleJump);
