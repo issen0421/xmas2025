@@ -70,7 +70,7 @@
             line-height: 1.4;
         }
         
-        /* ▼▼▼ 音量設定エリアのスタイル ▼▼▼ */
+        /* 音量設定エリア */
         .settings-area {
             margin: 15px 0;
             background: #f0f0f0;
@@ -94,7 +94,6 @@
             margin-left: 10px;
             cursor: pointer;
         }
-        /* ▲▲▲▲▲▲ */
 
         button {
             background: #ff5722;
@@ -148,6 +147,7 @@
     <canvas id="gameCanvas"></canvas>
 
     <div id="ui-layer">
+        <!-- スタート画面 -->
         <div id="start-screen" class="message-box">
             <h1>Avoid Rabuka!</h1>
             <p>前から飛んでくる敵を避けろ！</p>
@@ -166,10 +166,12 @@
 
             <button onclick="startGame()">スタート！</button>
         </div>
+
+        <!-- ゲームオーバー画面 -->
         <div id="game-over-screen" class="message-box" style="display: none;">
             <h1>あ〜あ、ぶつかっちゃいましたね〜</h1>
             <p>Score: <span id="final-score">0</span></p>
-            <button onclick="resetGame()">もう一回！</button>
+            <button onclick="backToTitle()">タイトルへ</button>
         </div>
     </div>
 
@@ -197,7 +199,7 @@
         // ==========================================
         const SOUND_JUMP_SRC = './ニュッ2.mp3';      
         const SOUND_GAMEOVER_SRC = './「残念」.mp3';  
-        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
+        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
         const BGM_SRC_NORMAL = './437_BPM120.mp3'; 
         const BGM_SRC_FEVER  = './337_BPM150.mp3'; 
 
@@ -212,7 +214,7 @@
         // ==========================================
         
         const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d', { alpha: false }); // alpha: falseで描画高速化
+        const ctx = canvas.getContext('2d', { alpha: false }); 
         const scoreDisplay = document.getElementById('score-display');
         const levelDisplay = document.getElementById('level-display');
         const startScreen = document.getElementById('start-screen');
@@ -228,7 +230,6 @@
         // 音量スライダーのイベントリスナー
         bgmSlider.addEventListener('input', (e) => {
             bgmVolume = parseFloat(e.target.value);
-            // 再生中のBGMに即時適用
             if (sounds.bgmNormal) sounds.bgmNormal.volume = bgmVolume;
             if (sounds.bgmFever) sounds.bgmFever.volume = bgmVolume;
         });
@@ -251,7 +252,6 @@
             if (!src) return;
             audioObj.src = src;
             if (isBgm) audioObj.loop = true;
-            // モバイルでの遅延対策（プリロード設定）
             audioObj.preload = 'auto'; 
         }
 
@@ -269,13 +269,11 @@
             }
         });
 
-        // SE再生（連打対策・軽量化）
+        // SE再生
         let lastSeTime = 0;
         function playSound(type, enemyIndex = null) {
-            // SEの音量が0なら処理しない
             if (seVolume <= 0) return;
 
-            // 短期間の過剰な再生を防ぐ（50ms制限）
             const now = Date.now();
             if (type === 'score' && now - lastSeTime < 50) return; 
             if (type === 'score') lastSeTime = now;
@@ -288,7 +286,6 @@
             }
 
             if (sound && sound.src) {
-                // 再生位置リセットは負荷になる場合があるが、SEには必要
                 sound.currentTime = 0;
                 sound.volume = seVolume;
                 sound.play().catch(() => {});
@@ -301,11 +298,10 @@
         function playBgm(type) {
             if (bgmVolume <= 0) {
                 stopBgm();
-                currentBgmType = type; // 状態だけ更新しておく
+                currentBgmType = type; 
                 return;
             }
             if (currentBgmType === type) {
-                // 音量だけ更新
                 if (type === 'normal') sounds.bgmNormal.volume = bgmVolume;
                 if (type === 'fever') sounds.bgmFever.volume = bgmVolume;
                 return;
@@ -398,7 +394,6 @@
 
             draw: function() {
                 ctx.save();
-                // 座標を整数化して描画負荷を下げる
                 const drawX = Math.floor(this.x);
                 const drawY = Math.floor(this.y);
                 
@@ -410,7 +405,6 @@
                     ctx.beginPath();
                     ctx.arc(0, 0, this.radius * 1.5, 0, Math.PI * 2);
                     ctx.clip();
-                    // drawImageのサイズも整数化
                     const s = Math.floor(this.radius * 1.5);
                     ctx.drawImage(playerObj.img, -s, -s, s * 2, s * 2);
                 } else {
@@ -453,9 +447,7 @@
                 for (let i = 0; i < this.items.length; i++) {
                     let o = this.items[i];
                     
-                    // 画面外（左側）の完全に消えたものは描画しない（軽量化）
                     if (o.x + o.size < -50) continue; 
-                    // 画面外（右側）も描画しない
                     if (o.x > logicalWidth + 50) continue;
 
                     ctx.save();
@@ -468,7 +460,6 @@
                     if (o.enemyData && o.enemyData.loadedObj.loaded) {
                          ctx.drawImage(o.enemyData.img, -size/2, -size/2, size, size);
                     } else {
-                        // デフォルト敵（描画負荷軽減のためシンプルに）
                         ctx.fillStyle = "#333";
                         ctx.beginPath(); ctx.arc(0, 0, size/2, 0, Math.PI*2); ctx.fill();
                     }
@@ -507,7 +498,6 @@
                     let o = this.items[i];
                     o.x -= gameSpeed;
 
-                    // 衝突判定（平方根計算を避けるため距離の2乗で比較：軽量化）
                     let dx = (o.x + o.size/2) - player.x;
                     let dy = (o.y + o.size/2) - player.y;
                     let distSq = dx*dx + dy*dy;
@@ -529,7 +519,6 @@
                         if (score % LEVEL_STEP === 0) levelUp();
                     }
 
-                    // 画面外削除（バッファを持たせて削除）
                     if (o.x + o.size < -200) {
                         this.items.shift();
                         i--;
@@ -557,7 +546,6 @@
         }
 
         function drawBackground() {
-            // 描画すべき画像決定
             let img = null;
             if (score >= 1000 && bgFeverObj.loaded) {
                 img = bgFeverObj.img;
@@ -567,24 +555,16 @@
 
             if (img) {
                 bgX -= gameSpeed * 0.5; 
-                // 比率計算
                 let imgW = Math.floor(img.width * (BASE_HEIGHT / img.height));
-                
-                // リセット位置計算
                 if (bgX <= -imgW) bgX += imgW;
 
                 let drawX = Math.floor(bgX);
-                // 画面を埋めるのに必要な回数だけ描画（無駄な描画を避ける）
                 while (drawX < logicalWidth) {
-                    // 画面内に入っているか簡易チェック
                     if (drawX + imgW > 0) {
                         ctx.drawImage(img, drawX, 0, imgW, BASE_HEIGHT);
                     }
                     drawX += imgW;
                 }
-            } else {
-                // 背景画像がない場合、Canvasをクリアする処理はloop関数内で行っている
-                // レインボーモードなどのCSS背景が見えるようにする
             }
         }
 
@@ -605,14 +585,11 @@
         function loop() {
             if (gameState !== 'PLAYING') return;
 
-            // 1. 画面クリア
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 2. 縮尺適用
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
 
-            // 3. 描画（背景→敵→プレイヤー）
             drawBackground();
             obstacles.update();
             obstacles.draw();
@@ -655,30 +632,39 @@
             levelDisplay.style.display = 'none';
         }
 
-        function resetGame() {
+        // ★タイトルに戻る関数（リセット用）
+        function backToTitle() {
             gameOverScreen.style.display = 'none';
-            startGame();
+            startScreen.style.display = 'block'; // タイトル画面を表示
+            scoreDisplay.style.display = 'none';
+            levelDisplay.style.display = 'none';
+            
+            // 背景リセット
+            canvas.classList.remove('rainbow-bg');
+            gameState = 'START';
+            
+            // 背景を一回クリアしておく
+            ctx.setTransform(1, 0, 0, 1, 0, 0); 
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
 
-        // イベントリスナー（重複登録防止のためシンプルに）
+        // イベントリスナー
         const handleJump = (e) => {
             if (e.type === 'keydown' && e.code !== 'Space') return;
             if (e.type === 'touchstart' && e.target.tagName === 'BUTTON') return;
-            if (e.type !== 'mousedown' && e.cancelable) e.preventDefault(); // mousedown以外でスクロール防止
+            if (e.target.type === 'range') return; // スライダー操作時はジャンプさせない
+            if (e.type !== 'mousedown' && e.cancelable) e.preventDefault(); 
 
             if (gameState === 'PLAYING') {
                 player.jump();
-            } else if (gameState !== 'PLAYING' && e.type !== 'mousedown') { 
-                // mousedownは連打誤爆しやすいので除外、キーとタッチのみでリスタート可
-                if (!e.repeat) {
-                    if (startScreen.style.display !== 'none') startGame();
-                    if (gameOverScreen.style.display !== 'none') resetGame();
-                }
             }
+            // タイトルやリザルト画面での誤操作を防ぐため、ここでの画面クリックによる遷移は削除
+            // ボタン操作のみに限定します
         };
 
         window.addEventListener('keydown', handleJump);
         window.addEventListener('mousedown', (e) => {
+            if (e.target.type === 'range') return;
             if (gameState === 'PLAYING') player.jump();
         });
         window.addEventListener('touchstart', handleJump, {passive: false});
