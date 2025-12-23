@@ -16,23 +16,19 @@
         #gameCanvas {
             display: block;
             margin: 0 auto;
-            /* デフォルトの背景（画像がない場合用） */
+            /* 背景画像がない場合のデフォルトグラデーション */
             background: linear-gradient(to bottom, #70c5ce 0%, #ffffff 100%); 
-            /* 画像が設定されたときに綺麗に広げる設定 */
-            background-size: cover;
-            background-position: center;
-            background-repeat: no-repeat;
-            transition: background 1s ease; /* 背景切り替えを滑らかに */
+            transition: background 1s ease;
         }
         
-        /* ▼▼▼ レインボー背景用のアニメーション ▼▼▼ */
+        /* レインボー背景用アニメーション */
         @keyframes rainbow {
             0% { background-position: 0% 50%; }
             50% { background-position: 100% 50%; }
             100% { background-position: 0% 50%; }
         }
         .rainbow-bg {
-            /* !important で元の背景画像設定を上書きして虹色にする */
+            /* 背景画像がある場合でもcanvasの裏で光らせるため !important */
             background: linear-gradient(270deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3) !important;
             background-size: 400% 400% !important;
             animation: rainbow 3s ease infinite !important;
@@ -53,21 +49,19 @@
         }
         .message-box {
             background: rgba(255, 255, 255, 0.95);
-            padding: 30px 40px; /* 横幅の余裕を調整 */
+            padding: 30px 40px;
             border-radius: 15px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.3);
             pointer-events: auto; /* ボタンなどは押せるようにする */
-            max-width: 90%; /* スマホではみ出さないように */
+            max-width: 90%; 
             width: 400px;
-            /* UIも少し拡大縮小に対応させる */
             transform-origin: center;
         }
         h1 {
             margin: 0 0 15px 0;
             color: #333;
-            /* 文字サイズを調整して一行に収める */
             font-size: 22px; 
-            white-space: nowrap; /* 改行禁止 */
+            white-space: nowrap;
         }
         p {
             color: #555;
@@ -86,7 +80,6 @@
             cursor: pointer;
             transition: all 0.2s;
             box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-            /* スマホでタップしやすいようにタッチ操作を有効化 */
             touch-action: manipulation;
         }
         button:hover {
@@ -146,40 +139,42 @@
         // ▼▼▼ 画像の設定 ▼▼▼
         // ==========================================
         const PLAYER_IMAGE_SRC = './Rabuka.png'; 
-        const ENEMY_IMAGE_SOURCES = [
-            './issen.png', 
-            './TD.png',    
-            './yama2.png', 
-            './houou.jpeg' 
+        const BACKGROUND_IMAGE_SRC = ''; // 背景画像のパス（例: './bg.png'）
+
+        // ==========================================
+        // ▼▼▼ 敵キャラの設定 (画像とサイズを個別に指定) ▼▼▼
+        // ==========================================
+        // src: 画像の場所, size: その敵の大きさ(ピクセル)
+        // 上から順に Lv1, Lv2, Lv3... と解禁されます
+        const ENEMY_DATA = [
+            { src: './issen.png', size: 80 },   // 敵1: ちょっと小さめ
+            { src: './TD.png',    size: 100 },  // 敵2: 普通
+            { src: './yama2.png', size: 120 },  // 敵3: デカい
+            { src: './houou.jpeg',size: 90 },   // 敵4: 普通
+            { src: '',            size: 150 }   // 敵5: (画像なしの例) 超デカい
         ];
-        const BACKGROUND_IMAGE_SRC = '';
 
         // ==========================================
         // ▼▼▼ 音声の設定 ▼▼▼
         // ==========================================
-        const SOUND_JUMP_SRC = './ニュッ2.mp3';      // ジャンプした時の音
-        const SOUND_GAMEOVER_SRC = './「残念」.mp3';  // ぶつかった時の音
-        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3';     // スコアが入った時の音
+        const SOUND_JUMP_SRC = './ニュッ2.mp3';      
+        const SOUND_GAMEOVER_SRC = './「残念」.mp3';  
+        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3';     
 
         // ==========================================
-        // ▼▼▼ サイズと難易度の設定 ▼▼▼
+        // ▼▼▼ ゲームバランス設定 ▼▼▼
         // ==========================================
-        
-        // ★重要★: これらの数値は「高さ720pxの画面」を基準とした大きさです。
         
         // 1. プレイヤーの大きさ（半径）
         const PLAYER_RADIUS = 30; 
 
-        // 2. 敵の大きさ（縦横サイズ）
-        const ENEMY_SIZE = 100;
-
-        // 3. レベルアップの区切り
+        // 2. レベルアップの区切り（点数）
         const LEVEL_STEP = 150;
         
-        // 4. 敵が出る頻度（距離）
+        // 3. 敵が出る頻度（距離）
         const SPAWN_INTERVAL = 350;
 
-        // 5. 最大レベル（これ以上は上がらない）
+        // 4. 最大レベル
         const MAX_LEVEL = 20;
 
         // ==========================================
@@ -192,79 +187,76 @@
         const gameOverScreen = document.getElementById('game-over-screen');
         const finalScoreText = document.getElementById('final-score');
 
-        // 音声オブジェクトの準備
+        // 音声オブジェクト
         const sounds = {
             jump: new Audio(),
             gameover: new Audio(),
             score: new Audio()
         };
-        
-        // 音声ファイルの読み込み設定
         if (SOUND_JUMP_SRC) sounds.jump.src = SOUND_JUMP_SRC;
         if (SOUND_GAMEOVER_SRC) sounds.gameover.src = SOUND_GAMEOVER_SRC;
         if (SOUND_SCORE_SRC) sounds.score.src = SOUND_SCORE_SRC;
 
-        // 音声を再生する便利関数
         function playSound(type) {
             const sound = sounds[type];
             if (sound && sound.src) {
                 sound.currentTime = 0;
                 sound.volume = 1;
-                sound.play().catch(e => {
-                    console.log('Sound play failed:', e);
-                });
+                sound.play().catch(e => { console.log('Sound error:', e); });
             }
         }
 
-        // 背景画像の設定適用
-        if (BACKGROUND_IMAGE_SRC && BACKGROUND_IMAGE_SRC.trim() !== '') {
-            canvas.style.backgroundImage = `url('${BACKGROUND_IMAGE_SRC}')`;
-        }
-
-        // ゲームの設定値（高さ720px基準）
-        const BASE_HEIGHT = 720; // 基準となる高さ
+        // 定数定義（高さ720px基準）
+        const BASE_HEIGHT = 720; 
         const INITIAL_SPEED = 5;
         const GRAVITY = 0.4;
         const JUMP_STRENGTH = -8;
 
-        let scaleRatio = 1; // 画面サイズに合わせた縮尺率
-        let logicalWidth = 0; // ゲーム内の論理的な横幅
-
+        // 変数
+        let scaleRatio = 1; 
+        let logicalWidth = 0; 
         let gameState = 'START';
         let score = 0;
         let currentLevel = 1;
         let gameSpeed = INITIAL_SPEED;
-        
-        // 画像ロード処理
+        let bgX = 0; // 背景のスクロール位置
+
+        // 画像ロード
         let playerImg = new Image();
         let playerImgLoaded = false;
-        
         if (PLAYER_IMAGE_SRC) {
             playerImg.src = PLAYER_IMAGE_SRC;
             playerImg.onload = () => { playerImgLoaded = true; };
         }
 
-        let enemyImages = [];
-        const validEnemySources = ENEMY_IMAGE_SOURCES.filter(src => src && src.trim() !== '');
-        
-        validEnemySources.forEach(src => {
-            const img = new Image();
-            img.src = src;
-            enemyImages.push(img);
+        let bgImg = new Image();
+        let bgImgLoaded = false;
+        if (BACKGROUND_IMAGE_SRC) {
+            bgImg.src = BACKGROUND_IMAGE_SRC;
+            bgImg.onload = () => { bgImgLoaded = true; };
+        }
+
+        // 敵データ準備
+        let enemies = [];
+        ENEMY_DATA.forEach(data => {
+            if (data.src) {
+                const img = new Image();
+                img.src = data.src;
+                enemies.push({ img: img, size: data.size, loaded: false });
+                img.onload = () => { enemies[enemies.length-1].loaded = true; };
+            } else {
+                // 画像なしの場合
+                enemies.push({ img: null, size: data.size, loaded: true });
+            }
         });
 
-        // 画面リサイズとスケーリング計算
+        // リサイズ処理
         function resizeCanvas() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
-
-            // 基準の高さ(720px)に対して、現在の画面がどれくらいの倍率か計算
             scaleRatio = canvas.height / BASE_HEIGHT;
-            
-            // ゲーム内の論理的な横幅を計算（実際の幅 ÷ 倍率）
             logicalWidth = canvas.width / scaleRatio;
 
-            // UIのサイズ感も合わせる（あくまで補助的）
             const uiScale = Math.min(scaleRatio, 1.5); 
             document.querySelectorAll('.message-box').forEach(el => {
                 el.style.transform = `scale(${Math.max(0.7, uiScale)})`;
@@ -273,7 +265,7 @@
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        // プレイヤーオブジェクト
+        // プレイヤー
         const player = {
             x: 100, 
             y: 300,
@@ -312,13 +304,10 @@
                 this.velocity += GRAVITY;
                 this.y += this.velocity;
 
-                // 地面判定（BASE_HEIGHTを使う）
                 if (this.y + this.radius >= BASE_HEIGHT) {
                     this.y = BASE_HEIGHT - this.radius;
                     gameOver();
                 }
-                
-                // 天井判定
                 if (this.y - this.radius <= 0) {
                     this.y = this.radius;
                     this.velocity = 2; 
@@ -331,26 +320,21 @@
             }
         };
 
-        // 障害物管理
+        // 障害物
         const obstacles = {
             items: [],
-            size: ENEMY_SIZE,
 
             draw: function() {
                 for (let i = 0; i < this.items.length; i++) {
                     let o = this.items[i];
                     
                     ctx.save();
-                    ctx.translate(o.x + this.size/2, o.y + this.size/2);
+                    ctx.translate(o.x + o.size/2, o.y + o.size/2);
                     
-                    if (o.img) {
-                        if (o.img.complete) {
-                            ctx.drawImage(o.img, -this.size/2, -this.size/2, this.size, this.size);
-                        } else {
-                            this.drawDefaultEnemy(ctx, this.size);
-                        }
+                    if (o.enemyData && o.enemyData.img) {
+                         ctx.drawImage(o.enemyData.img, -o.size/2, -o.size/2, o.size, o.size);
                     } else {
-                        this.drawDefaultEnemy(ctx, this.size);
+                        this.drawDefaultEnemy(ctx, o.size);
                     }
                     
                     ctx.restore();
@@ -382,25 +366,29 @@
                 let spawnDist = SPAWN_INTERVAL - (Math.random() * 100); 
 
                 // 出現判定
-                if (!lastItem || logicalWidth - (lastItem.x + this.size) >= spawnDist) {
-                    let minY = 0; 
-                    let maxY = BASE_HEIGHT - this.size;
-                    let _y = Math.random() * (maxY - minY) + minY;
+                if (!lastItem || logicalWidth - (lastItem.x + lastItem.size) >= spawnDist) {
                     
-                    let selectedImg = null;
-                    if (enemyImages.length > 0) {
+                    // 敵の選択ロジック
+                    let selectedEnemy = null;
+                    if (enemies.length > 0) {
                         let unlockedCount = Math.floor(score / LEVEL_STEP) + 1;
-                        if (unlockedCount > enemyImages.length) {
-                            unlockedCount = enemyImages.length;
-                        }
+                        if (unlockedCount > enemies.length) unlockedCount = enemies.length;
                         const idx = Math.floor(Math.random() * unlockedCount);
-                        selectedImg = enemyImages[idx];
+                        selectedEnemy = enemies[idx];
                     }
+
+                    // サイズ決定（設定がない場合はデフォルト100）
+                    let currentSize = selectedEnemy ? selectedEnemy.size : 100;
+
+                    let minY = 0; 
+                    let maxY = BASE_HEIGHT - currentSize;
+                    let _y = Math.random() * (maxY - minY) + minY;
 
                     this.items.push({
                         x: logicalWidth,
                         y: _y,
-                        img: selectedImg,
+                        size: currentSize,
+                        enemyData: selectedEnemy,
                         passed: false
                     });
                 }
@@ -409,31 +397,26 @@
                     let o = this.items[i];
                     o.x -= gameSpeed;
 
-                    let dx = (o.x + this.size/2) - player.x;
-                    let dy = (o.y + this.size/2) - player.y;
+                    let dx = (o.x + o.size/2) - player.x;
+                    let dy = (o.y + o.size/2) - player.y;
                     let distance = Math.sqrt(dx * dx + dy * dy);
 
-                    if (distance < player.radius + (this.size / 2 * 0.8)) {
+                    if (distance < player.radius + (o.size / 2 * 0.8)) {
                         gameOver();
                     }
 
-                    if (o.x + this.size < player.x && !o.passed) {
+                    if (o.x + o.size < player.x && !o.passed) {
                         score += 10;
                         scoreDisplay.innerText = score;
                         playSound('score');
                         o.passed = true;
                         
-                        // レインボー背景判定 (1000点以上)
-                        if (score >= 1000) {
-                            canvas.classList.add('rainbow-bg');
-                        }
-
-                        if (score % LEVEL_STEP === 0) {
-                            levelUp();
-                        }
+                        // レインボー背景判定
+                        if (score >= 1000) canvas.classList.add('rainbow-bg');
+                        if (score % LEVEL_STEP === 0) levelUp();
                     }
 
-                    if (o.x + this.size < 0) {
+                    if (o.x + o.size < 0) {
                         this.items.shift();
                         i--;
                     }
@@ -445,18 +428,39 @@
             }
         };
 
+        // 背景描画
+        function drawBackground() {
+            if (bgImgLoaded) {
+                // スクロール計算
+                bgX -= gameSpeed * 0.5; // 手前より少し遅く動かす（遠近感）
+                
+                // 画像の比率を維持して高さを合わせる
+                let imgW = bgImg.width * (BASE_HEIGHT / bgImg.height);
+                
+                // ループ処理
+                if (bgX <= -imgW) bgX += imgW;
+
+                // 画像を描画（途切れないように2枚以上描く）
+                let drawX = bgX;
+                while (drawX < logicalWidth) {
+                    ctx.drawImage(bgImg, drawX, 0, imgW, BASE_HEIGHT);
+                    drawX += imgW;
+                }
+            } else {
+                // 画像がない場合は透過（CSSのグラデーションが見える）
+                // ただしレインボーモードなどでCanvas自体に色がついている場合は何もしない
+            }
+        }
+
         function levelUp() {
-            // MAXレベルチェック
             if (currentLevel >= MAX_LEVEL) {
                 levelDisplay.innerText = "Lv.MAX";
-                levelDisplay.style.color = "#ff0000"; // MAX時は赤くする
-                return; // これ以上レベルもスピードも上げない
+                levelDisplay.style.color = "#ff0000"; 
+                return;
             }
-
             currentLevel++;
-            if (gameSpeed < 15) {
-                gameSpeed += 0.8;
-            }
+            if (gameSpeed < 15) gameSpeed += 0.8;
+            
             levelDisplay.innerText = "Lv." + currentLevel;
             levelDisplay.style.color = "#ffeb3b"; 
             setTimeout(() => { levelDisplay.style.color = "white"; }, 500);
@@ -465,14 +469,15 @@
         function loop() {
             if (gameState !== 'PLAYING') return;
 
-            // 1. ピクセル単位で画面クリア
+            // 1. 画面クリア
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 2. 縮尺を適用
+            // 2. 縮尺適用
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
 
-            // 3. ゲーム要素の描画
+            // 3. 描画
+            drawBackground();
             obstacles.update();
             obstacles.draw();
             player.update();
@@ -487,14 +492,14 @@
             scoreDisplay.style.display = 'block';
             levelDisplay.style.display = 'block';
             
-            // リセット処理
             player.y = BASE_HEIGHT / 2;
             player.velocity = 0;
             obstacles.reset();
             score = 0;
             currentLevel = 1;
             gameSpeed = INITIAL_SPEED;
-            canvas.classList.remove('rainbow-bg'); // レインボー解除
+            bgX = 0;
+            canvas.classList.remove('rainbow-bg');
             
             scoreDisplay.innerText = score;
             levelDisplay.innerText = "Lv.1";
@@ -517,7 +522,6 @@
             startGame();
         }
 
-        // キーボード操作
         window.addEventListener('keydown', function(e) {
             if (e.code === 'Space') {
                 if (gameState === 'PLAYING') {
@@ -530,34 +534,22 @@
             }
         });
 
-        // マウス操作
         window.addEventListener('mousedown', function(e) {
-            if (gameState === 'PLAYING') {
-                player.jump();
-            }
+            if (gameState === 'PLAYING') player.jump();
         });
         
-        // スマホタッチ操作 (改善版)
         window.addEventListener('touchstart', function(e) {
-            // ボタンのタップはボタンのonclickに任せる
             if (e.target.tagName === 'BUTTON') return;
-
-            e.preventDefault(); // スクロール防止
-
+            e.preventDefault();
             if (gameState === 'PLAYING') {
                 player.jump();
             } else if (gameState !== 'PLAYING') {
-                // 画面タップでもスタート/リセット可能に
                 if (startScreen.style.display !== 'none') startGame();
                 if (gameOverScreen.style.display !== 'none') resetGame();
             }
         }, {passive: false});
 
         resizeCanvas();
-        if (!BACKGROUND_IMAGE_SRC) {
-            ctx.fillStyle = "#333"; 
-            ctx.clearRect(0,0, canvas.width, canvas.height);
-        }
 
     </script>
 </body>
