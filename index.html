@@ -526,13 +526,19 @@
         function drawBackground() {
             let imgObj = (score >= 1000 && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
             if (imgObj && imgObj.loaded) {
-                // タイトル画面でもゆっくり動かす
-                bgX -= (gameState === 'PLAYING') ? gameSpeed * 0.5 : 1; 
+                // スクロール速度の決定
+                const scrollSpeed = (gameState === 'PLAYING') ? gameSpeed * 0.5 : 1; 
+                bgX -= scrollSpeed; 
+                
                 let imgW = Math.floor(imgObj.img.width * (BASE_HEIGHT / imgObj.img.height));
+                
+                // ループ計算
                 if (bgX <= -imgW) bgX += imgW;
+                
                 let drawX = Math.floor(bgX);
                 while (drawX < logicalWidth) {
-                    if (drawX + imgW > 0) ctx.drawImage(imgObj.img, drawX, 0, imgW, BASE_HEIGHT);
+                    // チカチカ防止のため、描画幅を1ピクセルだけ余分に持たせて重ねる
+                    ctx.drawImage(imgObj.img, drawX, 0, imgW + 1, BASE_HEIGHT);
                     drawX += imgW;
                 }
             }
