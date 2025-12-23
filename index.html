@@ -150,19 +150,25 @@
         // ==========================================
         // scoreSound: その敵を避けた時の音。設定しない('')場合は共通音が鳴ります。
         const ENEMY_DATA = [
-            { src: './issen.png',size: 100,  scoreSound: '' }, // 敵1
-            { src: './TD.png',size: 100, scoreSound: '' }, // 敵2
-            { src: './魚卵.png',size: 100, scoreSound: '' }, // 敵3
-            { src: './houou.png',size: 120,  scoreSound: '' }, // 敵4
-            { src: './rugia.png',size: 150, scoreSound: '' }  // 敵5
+            { src: './issen.png', size: 100,  scoreSound: '' }, // 敵1
+            { src: './TD.png',    size: 100,  scoreSound: '' }, // 敵2
+            { src: './魚卵.png',  size: 100,  scoreSound: '' }, // 敵3
+            { src: './houou.png', size: 120,  scoreSound: '' }, // 敵4
+            { src: './rugia.png', size: 150,  scoreSound: '' }  // 敵5
         ];
 
         // ==========================================
-        // ▼▼▼ 共通音声の設定 ▼▼▼
+        // ▼▼▼ 効果音の設定（SE） ▼▼▼
         // ==========================================
         const SOUND_JUMP_SRC = './ニュッ2.mp3';      
         const SOUND_GAMEOVER_SRC = './「残念」.mp3';  
         const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; // デフォルトのスコア音
+
+        // ==========================================
+        // ▼▼▼ BGMの設定（BGM）★ここを追加！ ▼▼▼
+        // ==========================================
+        const BGM_SRC_NORMAL = './437_BPM120.mp3'; // 通常時のBGM (0〜990点)
+        const BGM_SRC_FEVER  = './337_BPM150.mp3'; // 1000点以上のBGM
 
         // ==========================================
         // ▼▼▼ ゲームバランス設定 ▼▼▼
@@ -195,13 +201,25 @@
             jump: new Audio(),
             gameover: new Audio(),
             score: new Audio(),
+            bgmNormal: new Audio(), // BGM用
+            bgmFever: new Audio(),  // BGM用
             custom: {} // 敵ごとのカスタム音声を格納
         };
         
-        // 共通音声読み込み
+        // SE読み込み
         if (SOUND_JUMP_SRC) sounds.jump.src = SOUND_JUMP_SRC;
         if (SOUND_GAMEOVER_SRC) sounds.gameover.src = SOUND_GAMEOVER_SRC;
         if (SOUND_SCORE_SRC) sounds.score.src = SOUND_SCORE_SRC;
+
+        // BGM読み込み & ループ設定
+        if (BGM_SRC_NORMAL) {
+            sounds.bgmNormal.src = BGM_SRC_NORMAL;
+            sounds.bgmNormal.loop = true;
+        }
+        if (BGM_SRC_FEVER) {
+            sounds.bgmFever.src = BGM_SRC_FEVER;
+            sounds.bgmFever.loop = true;
+        }
 
         // 敵ごとの音声をプリロード
         ENEMY_DATA.forEach((data, index) => {
@@ -212,23 +230,52 @@
             }
         });
 
-        // 音声再生関数
+        // 音声再生関数 (SE用)
         function playSound(type, enemyIndex = null) {
             let sound = null;
-
-            // 敵ごとのカスタム音判定
             if (type === 'score' && enemyIndex !== null && sounds.custom['enemy_' + enemyIndex]) {
                 sound = sounds.custom['enemy_' + enemyIndex];
             } else {
-                // 通常の音
                 sound = sounds[type];
             }
-
             if (sound && sound.src) {
                 sound.currentTime = 0;
                 sound.volume = 1;
                 sound.play().catch(e => { console.log('Sound error:', e); });
             }
+        }
+
+        // BGM制御変数
+        let currentBgmType = 'none'; // 'normal', 'fever', 'none'
+
+        // BGM再生関数
+        function playBgm(type) {
+            // 同じタイプなら何もしない（再生し続ける）
+            if (currentBgmType === type) return;
+
+            // まず全て止める
+            stopBgm();
+
+            if (type === 'normal' && sounds.bgmNormal.src) {
+                sounds.bgmNormal.play().catch(e => console.log('BGM Play Error:', e));
+                currentBgmType = 'normal';
+            } else if (type === 'fever' && sounds.bgmFever.src) {
+                sounds.bgmFever.play().catch(e => console.log('BGM Play Error:', e));
+                currentBgmType = 'fever';
+            }
+        }
+
+        // BGM停止関数
+        function stopBgm() {
+            if (sounds.bgmNormal.src) {
+                sounds.bgmNormal.pause();
+                sounds.bgmNormal.currentTime = 0;
+            }
+            if (sounds.bgmFever.src) {
+                sounds.bgmFever.pause();
+                sounds.bgmFever.currentTime = 0;
+            }
+            currentBgmType = 'none';
         }
 
         // 定数定義（高さ720px基準）
@@ -254,7 +301,7 @@
             playerImg.onload = () => { playerImgLoaded = true; };
         }
 
-        // 背景画像ロード（2種類）
+        // 背景画像ロード
         let bgImgNormal = new Image();
         let bgImgNormalLoaded = false;
         if (BACKGROUND_IMAGE_NORMAL) {
@@ -275,7 +322,6 @@
             if (data.src) {
                 const img = new Image();
                 img.src = data.src;
-                // indexを保持しておく（音声再生用）
                 enemies.push({ img: img, size: data.size, loaded: false, originalIndex: idx });
                 img.onload = () => { enemies[enemies.length-1].loaded = true; };
             } else {
@@ -401,7 +447,6 @@
                 // 出現判定
                 if (!lastItem || logicalWidth - (lastItem.x + lastItem.size) >= spawnDist) {
                     
-                    // 敵の選択ロジック
                     let selectedEnemy = null;
                     if (enemies.length > 0) {
                         let unlockedCount = Math.floor(score / LEVEL_STEP) + 1;
@@ -410,9 +455,7 @@
                         selectedEnemy = enemies[idx];
                     }
 
-                    // サイズ決定
                     let currentSize = selectedEnemy ? selectedEnemy.size : 100;
-
                     let minY = 0; 
                     let maxY = BASE_HEIGHT - currentSize;
                     let _y = Math.random() * (maxY - minY) + minY;
@@ -442,14 +485,13 @@
                         score += 10;
                         scoreDisplay.innerText = score;
                         
-                        // 敵固有の音再生を試みる
                         let eIdx = (o.enemyData) ? o.enemyData.originalIndex : null;
                         playSound('score', eIdx);
                         
                         o.passed = true;
                         
-                        // 1000点超えたら背景切り替え
-                        checkBackground();
+                        // 背景とBGMのチェック
+                        checkGameState();
 
                         if (score % LEVEL_STEP === 0) levelUp();
                     }
@@ -466,32 +508,33 @@
             }
         };
 
-        // 背景管理
-        function checkBackground() {
+        // 背景とBGMの管理
+        function checkGameState() {
             if (score >= 1000) {
+                // FEVERモード
                 if (BACKGROUND_IMAGE_FEVER && bgImgFeverLoaded) {
-                    // FEVER画像がある -> レインボー解除してFEVER画像使用
                     canvas.classList.remove('rainbow-bg');
                 } else {
-                    // FEVER画像がない -> レインボーON
                     canvas.classList.add('rainbow-bg');
                 }
+                // BGM切り替え
+                playBgm('fever');
             } else {
+                // NORMALモード
                 canvas.classList.remove('rainbow-bg');
+                // BGM切り替え
+                playBgm('normal');
             }
         }
 
         // 背景描画
         function drawBackground() {
             let currentBg = bgImgNormalLoaded ? bgImgNormal : null;
-            
-            // 1000点以上でFEVER画像があればそちらを使う
             if (score >= 1000 && bgImgFeverLoaded) {
                 currentBg = bgImgFever;
             }
 
             if (currentBg) {
-                // スクロール計算
                 bgX -= gameSpeed * 0.5; 
                 let imgW = currentBg.width * (BASE_HEIGHT / currentBg.height);
                 if (bgX <= -imgW) bgX += imgW;
@@ -521,14 +564,11 @@
         function loop() {
             if (gameState !== 'PLAYING') return;
 
-            // 1. 画面クリア
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 2. 縮尺適用
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
 
-            // 3. 描画
             drawBackground();
             obstacles.update();
             obstacles.draw();
@@ -552,7 +592,7 @@
             gameSpeed = INITIAL_SPEED;
             bgX = 0;
             
-            checkBackground(); // 背景初期化
+            checkGameState(); // 背景とBGM初期化
             
             scoreDisplay.innerText = score;
             levelDisplay.innerText = "Lv.1";
@@ -563,6 +603,7 @@
 
         function gameOver() {
             gameState = 'GAMEOVER';
+            stopBgm(); // BGM停止
             playSound('gameover');
             finalScoreText.innerText = score;
             gameOverScreen.style.display = 'block';
