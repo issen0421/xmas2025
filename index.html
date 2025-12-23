@@ -113,6 +113,7 @@
             text-shadow: 3px 3px 0 #000;
             pointer-events: none;
             z-index: 10;
+            display: none;
         }
         #level-display {
             position: absolute;
@@ -123,6 +124,7 @@
             text-shadow: 1px 1px 0 #000;
             pointer-events: none;
             z-index: 10;
+            display: none;
         }
     </style>
 </head>
@@ -201,7 +203,6 @@
         // ==========================================
         
         const canvas = document.getElementById('gameCanvas');
-        // alpha: false は背景が不透明であることをブラウザに伝え、描画を高速化する
         const ctx = canvas.getContext('2d', { alpha: false }); 
         const scoreDisplay = document.getElementById('score-display');
         const levelDisplay = document.getElementById('level-display');
@@ -255,13 +256,11 @@
             }
         });
 
-        // SE再生（連打制限付き）
+        // SE再生
         let lastSeTime = 0;
         function playSound(type, enemyIndex = null) {
             if (seVolume <= 0) return;
-
             const now = Date.now();
-            // スコア音は少し間引く（負荷軽減）
             if (type === 'score' && now - lastSeTime < 80) return; 
             if (type === 'score') lastSeTime = now;
 
@@ -281,7 +280,6 @@
 
         // BGM制御
         let currentBgmType = 'none';
-
         function playBgm(type) {
             if (bgmVolume <= 0) {
                 stopBgm();
@@ -293,13 +291,8 @@
                 if (type === 'fever') sounds.bgmFever.volume = bgmVolume;
                 return;
             }
-
             stopBgm();
-
-            let targetSound = null;
-            if (type === 'normal') targetSound = sounds.bgmNormal;
-            if (type === 'fever') targetSound = sounds.bgmFever;
-
+            let targetSound = (type === 'normal') ? sounds.bgmNormal : sounds.bgmFever;
             if (targetSound && targetSound.src) {
                 targetSound.volume = bgmVolume;
                 targetSound.play().catch(() => {});
@@ -334,8 +327,7 @@
         let gameSpeed = INITIAL_SPEED;
         let bgX = 0; 
 
-        // ★高速化のための画像事前処理（キャッシュ）
-        // 画像を読み込んだら、指定サイズにリサイズ＆円形加工したものをメモリ上に作る
+        // 画像事前処理（キャッシュ）
         const imageCache = {
             player: null,
             bgNormal: null,
@@ -343,30 +335,23 @@
             enemies: []
         };
 
-        // 画像処理用キャンバス（使い回す）
         const tempCanvas = document.createElement('canvas');
         const tempCtx = tempCanvas.getContext('2d');
 
         function createProcessedImage(imgSrc, width, height, isCircle = false) {
             if (!imgSrc) return { img: null, loaded: false };
-            
             const rawImg = new Image();
-            const result = { img: null, loaded: false }; // 初期状態
-
+            const result = { img: null, loaded: false };
             rawImg.onload = () => {
-                // メモリ上のキャンバスで加工
                 tempCanvas.width = width;
                 tempCanvas.height = height;
                 tempCtx.clearRect(0, 0, width, height);
-
                 if (isCircle) {
                     tempCtx.beginPath();
                     tempCtx.arc(width/2, height/2, width/2, 0, Math.PI * 2);
                     tempCtx.clip();
                 }
                 tempCtx.drawImage(rawImg, 0, 0, width, height);
-
-                // 加工した画像を新しいImageオブジェクトとして保存
                 const processed = new Image();
                 processed.src = tempCanvas.toDataURL();
                 result.img = processed;
@@ -376,10 +361,7 @@
             return result;
         }
 
-        // プレイヤー画像のキャッシュ作成 (直径 = 半径*2)
         imageCache.player = createProcessedImage(PLAYER_IMAGE_SRC, PLAYER_RADIUS * 3, PLAYER_RADIUS * 3, true);
-
-        // 背景画像の読み込み（背景はサイズが大きいのでそのまま読む）
         function loadBgImage(src) {
             if (!src) return { img: null, loaded: false };
             const img = new Image();
@@ -391,12 +373,10 @@
         imageCache.bgNormal = loadBgImage(BACKGROUND_IMAGE_NORMAL);
         imageCache.bgFever = loadBgImage(BACKGROUND_IMAGE_FEVER);
 
-        // 敵画像のキャッシュ作成
         ENEMY_DATA.forEach((data, idx) => {
             if (data.src) {
-                // 指定サイズで事前にリサイズしておく
                 imageCache.enemies.push({ 
-                    data: createProcessedImage(data.src, data.size, data.size, false), // 敵は円形カットしない（必要ならtrueへ）
+                    data: createProcessedImage(data.src, data.size, data.size, false),
                     size: data.size,
                     originalIndex: idx 
                 });
@@ -411,7 +391,6 @@
             canvas.height = window.innerHeight;
             scaleRatio = canvas.height / BASE_HEIGHT;
             logicalWidth = canvas.width / scaleRatio;
-
             const uiScale = Math.min(scaleRatio, 1.5); 
             document.querySelectorAll('.message-box').forEach(el => {
                 el.style.transform = `scale(${Math.max(0.7, uiScale)})`;
@@ -427,24 +406,17 @@
             radius: PLAYER_RADIUS,
             velocity: 0,
             rotation: 0,
-
             draw: function() {
-                // 座標を整数化（アンチエイリアス負荷軽減）
                 const drawX = Math.floor(this.x);
                 const drawY = Math.floor(this.y);
-                
-                // 回転処理は必要なので save/restore は使うが、clipは使わない
                 ctx.save();
                 ctx.translate(drawX, drawY);
                 this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
                 ctx.rotate(this.rotation);
-
                 if (imageCache.player.loaded) {
-                    // 加工済み画像を描画するだけ（高速）
-                    const size = this.radius * 3; // キャッシュ作成時のサイズに合わせる
+                    const size = this.radius * 3;
                     ctx.drawImage(imageCache.player.img, -size/2, -size/2, size, size);
                 } else {
-                    // 読み込み前や画像なしの場合のフォールバック
                     ctx.beginPath();
                     ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
                     ctx.fillStyle = "#FFD700";
@@ -455,11 +427,9 @@
                 }
                 ctx.restore();
             },
-
             update: function() {
                 this.velocity += GRAVITY;
                 this.y += this.velocity;
-
                 if (this.y + this.radius >= BASE_HEIGHT) {
                     this.y = BASE_HEIGHT - this.radius;
                     gameOver();
@@ -469,7 +439,6 @@
                     this.velocity = 2; 
                 }
             },
-
             jump: function() {
                 this.velocity = JUMP_STRENGTH;
                 playSound('jump');
@@ -479,25 +448,16 @@
         // 障害物
         const obstacles = {
             items: [],
-
             draw: function() {
                 for (let i = 0; i < this.items.length; i++) {
                     let o = this.items[i];
-                    
-                    // 画面外描画スキップ（完全に見えていないもの）
-                    if (o.x + o.size < -50) continue; 
-                    if (o.x > logicalWidth + 50) continue;
-
-                    // 回転しないので save/restore を省略し、直接座標計算して描画（最速）
+                    if (o.x + o.size < -50 || o.x > logicalWidth + 50) continue; 
                     const drawX = Math.floor(o.x);
                     const drawY = Math.floor(o.y);
                     const size = Math.floor(o.size);
-
                     if (o.enemyCache && o.enemyCache.data.loaded) {
-                         // 事前リサイズ済みの画像を描画
                          ctx.drawImage(o.enemyCache.data.img, drawX, drawY);
                     } else {
-                        // デフォルト敵
                         ctx.fillStyle = "#333";
                         ctx.beginPath(); 
                         ctx.arc(drawX + size/2, drawY + size/2, size/2, 0, Math.PI*2); 
@@ -505,11 +465,9 @@
                     }
                 }
             },
-
             update: function() {
                 let lastItem = this.items.length > 0 ? this.items[this.items.length - 1] : null;
                 let spawnDist = SPAWN_INTERVAL - (Math.random() * 100); 
-
                 if (!lastItem || logicalWidth - (lastItem.x + lastItem.size) >= spawnDist) {
                     let selectedCache = null;
                     if (imageCache.enemies.length > 0) {
@@ -518,87 +476,63 @@
                         const idx = Math.floor(Math.random() * unlockedCount);
                         selectedCache = imageCache.enemies[idx];
                     }
-
                     let currentSize = selectedCache ? selectedCache.size : 100;
                     let minY = 0; 
                     let maxY = BASE_HEIGHT - currentSize;
                     let _y = Math.random() * (maxY - minY) + minY;
-
                     this.items.push({
                         x: logicalWidth,
                         y: _y,
                         size: currentSize,
-                        enemyCache: selectedCache, // キャッシュデータを参照
+                        enemyCache: selectedCache,
                         passed: false
                     });
                 }
-
                 for (let i = 0; i < this.items.length; i++) {
                     let o = this.items[i];
                     o.x -= gameSpeed;
-
-                    // 衝突判定（中心座標で計算）
                     let centerX = o.x + o.size/2;
                     let centerY = o.y + o.size/2;
                     let dx = centerX - player.x;
                     let dy = centerY - player.y;
                     let distSq = dx*dx + dy*dy;
                     let minDist = player.radius + (o.size / 2 * 0.8);
-
                     if (distSq < minDist * minDist) {
                         gameOver();
                     }
-
                     if (o.x + o.size < player.x && !o.passed) {
                         score += 10;
                         scoreDisplay.innerText = score;
-                        
                         let eIdx = (o.enemyCache) ? o.enemyCache.originalIndex : null;
                         playSound('score', eIdx);
-                        
                         o.passed = true;
                         checkGameState();
                         if (score % LEVEL_STEP === 0) levelUp();
                     }
-
                     if (o.x + o.size < -200) {
                         this.items.shift();
                         i--;
                     }
                 }
             },
-            
-            reset: function() {
-                this.items = [];
-            }
+            reset: function() { this.items = []; }
         };
 
         function checkGameState() {
-            if (score >= 1000) {
-                playBgm('fever');
-            } else {
-                playBgm('normal');
-            }
+            if (score >= 1000) playBgm('fever');
+            else playBgm('normal');
         }
 
         function drawBackground() {
-            let img = null;
-            if (score >= 1000 && imageCache.bgFever.loaded) {
-                img = imageCache.bgFever.img;
-            } else if (imageCache.bgNormal.loaded) {
-                img = imageCache.bgNormal.img;
-            }
-
-            if (img) {
-                bgX -= gameSpeed * 0.5; 
-                let imgW = Math.floor(img.width * (BASE_HEIGHT / img.height));
+            let imgObj = (score >= 1000 && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
+            if (imgObj && imgObj.loaded) {
+                // タイトル画面でもゆっくり動かす
+                bgX -= (gameState === 'PLAYING') ? gameSpeed * 0.5 : 1; 
+                let imgW = Math.floor(imgObj.img.width * (BASE_HEIGHT / imgObj.img.height));
                 if (bgX <= -imgW) bgX += imgW;
-
                 let drawX = Math.floor(bgX);
                 while (drawX < logicalWidth) {
-                    if (drawX + imgW > 0) {
-                        ctx.drawImage(img, drawX, 0, imgW, BASE_HEIGHT);
-                    }
+                    if (drawX + imgW > 0) ctx.drawImage(imgObj.img, drawX, 0, imgW, BASE_HEIGHT);
                     drawX += imgW;
                 }
             }
@@ -612,28 +546,25 @@
             }
             currentLevel++;
             if (gameSpeed < 15) gameSpeed += 0.8;
-            
             levelDisplay.innerText = "Lv." + currentLevel;
             levelDisplay.style.color = "#ffeb3b"; 
             setTimeout(() => { levelDisplay.style.color = "white"; }, 500);
         }
 
         function loop() {
-            if (gameState !== 'PLAYING') return;
-
-            // 1. 座標リセット & クリア
+            // 背景は常に描画する
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 2. 縮尺適用
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
-
-            // 3. 描画
+            
             drawBackground();
-            obstacles.update(); // 敵の移動計算
-            obstacles.draw();   // 敵の描画
-            player.update();    // プレイヤーの移動計算
-            player.draw();      // プレイヤーの描画
+
+            if (gameState === 'PLAYING') {
+                obstacles.update();
+                obstacles.draw();
+                player.update();
+                player.draw();
+            }
 
             requestAnimationFrame(loop);
         }
@@ -643,22 +574,16 @@
             startScreen.style.display = 'none';
             scoreDisplay.style.display = 'block';
             levelDisplay.style.display = 'block';
-            
             player.y = BASE_HEIGHT / 2;
             player.velocity = 0;
             obstacles.reset();
             score = 0;
             currentLevel = 1;
             gameSpeed = INITIAL_SPEED;
-            bgX = 0;
-            
             checkGameState(); 
-            
             scoreDisplay.innerText = score;
             levelDisplay.innerText = "Lv.1";
             levelDisplay.style.color = "white";
-
-            loop();
         }
 
         function gameOver() {
@@ -676,11 +601,8 @@
             startScreen.style.display = 'block'; 
             scoreDisplay.style.display = 'none';
             levelDisplay.style.display = 'none';
-            
             gameState = 'START';
-            
-            ctx.setTransform(1, 0, 0, 1, 0, 0); 
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            score = 0; // スコア背景を戻すため
         }
 
         const handleJump = (e) => {
@@ -688,10 +610,7 @@
             if (e.type === 'touchstart' && e.target.tagName === 'BUTTON') return;
             if (e.target.type === 'range') return;
             if (e.type !== 'mousedown' && e.cancelable) e.preventDefault(); 
-
-            if (gameState === 'PLAYING') {
-                player.jump();
-            }
+            if (gameState === 'PLAYING') player.jump();
         };
 
         window.addEventListener('keydown', handleJump);
@@ -701,7 +620,8 @@
         });
         window.addEventListener('touchstart', handleJump, {passive: false});
 
-        resizeCanvas();
+        // 描画ループ開始
+        requestAnimationFrame(loop);
 
     </script>
 </body>
