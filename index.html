@@ -25,18 +25,6 @@
             image-rendering: -webkit-optimize-contrast; 
         }
         
-        /* レインボー背景アニメーション */
-        @keyframes rainbow {
-            0% { background-position: 0% 50%; }
-            50% { background-position: 100% 50%; }
-            100% { background-position: 0% 50%; }
-        }
-        .rainbow-bg {
-            background: linear-gradient(270deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3) !important;
-            background-size: 400% 400% !important;
-            animation: rainbow 3s ease infinite !important;
-        }
-
         #ui-layer {
             position: absolute;
             top: 0;
@@ -285,9 +273,6 @@
             }
 
             if (sound && sound.src) {
-                // currentTime=0 は負荷になる場合があるが、SEのレスポンスには必要
-                // ただし、再生中でない場合のみリセットするなど工夫も可能だが、
-                // ここではシンプルにセットする
                 sound.currentTime = 0;
                 sound.volume = seVolume;
                 sound.play().catch(() => {});
@@ -590,14 +575,8 @@
 
         function checkGameState() {
             if (score >= 1000) {
-                if (BACKGROUND_IMAGE_FEVER && imageCache.bgFever.loaded) {
-                    canvas.classList.remove('rainbow-bg');
-                } else {
-                    canvas.classList.add('rainbow-bg');
-                }
                 playBgm('fever');
             } else {
-                canvas.classList.remove('rainbow-bg');
                 playBgm('normal');
             }
         }
@@ -698,7 +677,6 @@
             scoreDisplay.style.display = 'none';
             levelDisplay.style.display = 'none';
             
-            canvas.classList.remove('rainbow-bg');
             gameState = 'START';
             
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
