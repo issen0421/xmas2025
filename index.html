@@ -36,6 +36,7 @@
             justify-content: center;
             align-items: center;
             text-align: center;
+            z-index: 20;
         }
         .message-box {
             background: rgba(255, 255, 255, 0.95);
@@ -44,9 +45,9 @@
             box-shadow: 0 10px 25px rgba(0,0,0,0.3);
             pointer-events: auto; 
             max-width: 90%; 
-            width: 350px;
+            width: 320px;
             transform-origin: center;
-            will-change: transform;
+            box-sizing: border-box;
         }
         h1 {
             margin: 0 0 10px 0;
@@ -61,7 +62,7 @@
             line-height: 1.4;
         }
         .high-score-text {
-            font-size: 14px;
+            font-size: 16px;
             color: #ff5722;
             font-weight: bold;
             margin-bottom: 15px;
@@ -96,7 +97,7 @@
             color: white;
             border: none;
             padding: 12px 40px;
-            font-size: 20px;
+            font-size: 18px;
             font-weight: bold;
             border-radius: 30px;
             cursor: pointer;
@@ -169,7 +170,7 @@
         </div>
     </div>
 
-    <!-- Firebase SDKs -->
+    <!-- Firebase / Logic -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
@@ -183,16 +184,16 @@
         const BACKGROUND_IMAGE_FEVER  = './color0083.png'; 
 
         const ENEMY_DATA = [
-            { src: './issen.png', size: 100,  scoreSound: '' },
-            { src: './TD.png',    size: 100,  scoreSound: '' },
-            { src: './魚卵.png',  size: 100,  scoreSound: '' },
-            { src: './houou.png', size: 120,  scoreSound: '' },
-            { src: './rugia.png', size: 150,  scoreSound: '' }
+            { src: './issen.png', size: 100 },
+            { src: './TD.png',    size: 100 },
+            { src: './魚卵.png',  size: 100 },
+            { src: './houou.png', size: 120 },
+            { src: './rugia.png', size: 150 }
         ];
 
         const SOUND_JUMP_SRC = './ニュッ2.mp3';      
         const SOUND_GAMEOVER_SRC = './「残念」.mp3';  
-        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
+        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
         const BGM_SRC_NORMAL = './普通.mp3'; 
         const BGM_SRC_FEVER  = './FEVER.mp3'; 
 
@@ -201,7 +202,7 @@
         const SPAWN_INTERVAL = 350;
         const MAX_LEVEL = 20;
 
-        // Firebase設定
+        // Firebase Init
         const firebaseConfig = JSON.parse(__firebase_config);
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
@@ -211,32 +212,26 @@
         let userId = null;
         let highScore = 0;
 
-        // ハイスコア同期処理
+        // ハイスコア同期
         async function fetchHighScore(uid) {
-            const scoreDoc = doc(db, 'artifacts', appId, 'users', uid, 'scores', 'highScore');
+            const scoreDoc = doc(db, 'artifacts', appId, 'users', uid, 'data', 'highScore');
             try {
                 const snap = await getDoc(scoreDoc);
                 if (snap.exists()) {
                     highScore = snap.data().value || 0;
-                } else {
-                    highScore = 0;
                 }
                 updateHighScoreUI();
-            } catch (e) {
-                console.error("Score fetch failed", e);
-            }
+            } catch (e) { console.error("Fetch score failed", e); }
         }
 
         async function saveHighScore(newScore) {
-            if (newScore <= highScore || !userId) return;
+            if (!userId || newScore <= highScore) return;
             highScore = newScore;
             updateHighScoreUI();
-            const scoreDoc = doc(db, 'artifacts', appId, 'users', userId, 'scores', 'highScore');
+            const scoreDoc = doc(db, 'artifacts', appId, 'users', userId, 'data', 'highScore');
             try {
                 await setDoc(scoreDoc, { value: highScore });
-            } catch (e) {
-                console.error("Score save failed", e);
-            }
+            } catch (e) { console.error("Save score failed", e); }
         }
 
         function updateHighScoreUI() {
@@ -244,7 +239,6 @@
             document.getElementById('over-best-score').innerText = `自己ベスト: ${highScore}`;
         }
 
-        // 認証初期化
         const initAuth = async () => {
             if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
                 await signInWithCustomToken(auth, __initial_auth_token);
@@ -262,7 +256,7 @@
         });
 
         // ==========================================
-        // ゲームエンジン部
+        // ゲームロジック
         // ==========================================
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d', { alpha: false }); 
@@ -291,8 +285,7 @@
             gameover: new Audio(),
             score: new Audio(),
             bgmNormal: new Audio(),
-            bgmFever: new Audio(),
-            custom: {} 
+            bgmFever: new Audio()
         };
         
         function loadAudio(audioObj, src, isBgm) {
@@ -308,21 +301,9 @@
         loadAudio(sounds.bgmNormal, BGM_SRC_NORMAL, true);
         loadAudio(sounds.bgmFever, BGM_SRC_FEVER, true);
 
-        ENEMY_DATA.forEach((data, index) => {
-            if (data.scoreSound) {
-                const audio = new Audio();
-                loadAudio(audio, data.scoreSound);
-                sounds.custom['enemy_' + index] = audio;
-            }
-        });
-
-        let lastSeTime = 0;
-        function playSound(type, enemyIndex = null) {
+        function playSound(type) {
             if (seVolume <= 0) return;
-            const now = Date.now();
-            if (type === 'score' && now - lastSeTime < 80) return; 
-            if (type === 'score') lastSeTime = now;
-            let sound = (type === 'score' && enemyIndex !== null && sounds.custom['enemy_' + enemyIndex]) ? sounds.custom['enemy_' + enemyIndex] : sounds[type];
+            let sound = sounds[type];
             if (sound && sound.src) {
                 sound.currentTime = 0;
                 sound.volume = seVolume;
@@ -335,10 +316,10 @@
             if (bgmVolume <= 0) { stopBgm(); currentBgmType = type; return; }
             if (currentBgmType === type) return;
             stopBgm();
-            let targetSound = (type === 'normal') ? sounds.bgmNormal : sounds.bgmFever;
-            if (targetSound && targetSound.src) {
-                targetSound.volume = bgmVolume;
-                targetSound.play().catch(() => {});
+            let target = (type === 'normal') ? sounds.bgmNormal : sounds.bgmFever;
+            if (target && target.src) {
+                target.volume = bgmVolume;
+                target.play().catch(() => {});
                 currentBgmType = type;
             }
         }
@@ -397,11 +378,8 @@
         imageCache.bgFever = loadBgImage(BACKGROUND_IMAGE_FEVER);
 
         ENEMY_DATA.forEach((data, idx) => {
-            if (data.src) {
-                imageCache.enemies.push({ data: createProcessedImage(data.src, data.size, data.size, false), size: data.size, originalIndex: idx });
-            } else {
-                imageCache.enemies.push({ data: { img: null, loaded: true }, size: data.size, originalIndex: idx });
-            }
+            if (data.src) imageCache.enemies.push({ data: createProcessedImage(data.src, data.size, data.size, false), size: data.size, originalIndex: idx });
+            else imageCache.enemies.push({ data: { img: null, loaded: true }, size: data.size, originalIndex: idx });
         });
 
         function resizeCanvas() {
@@ -410,9 +388,7 @@
             scaleRatio = canvas.height / BASE_HEIGHT;
             logicalWidth = canvas.width / scaleRatio;
             const uiScale = Math.min(scaleRatio, 1.5); 
-            document.querySelectorAll('.message-box').forEach(el => {
-                el.style.transform = `scale(${Math.max(0.7, uiScale)})`;
-            });
+            document.querySelectorAll('.message-box').forEach(el => { el.style.transform = `scale(${Math.max(0.7, uiScale)})`; });
         }
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
@@ -426,12 +402,8 @@
                 ctx.translate(drawX, drawY);
                 this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
                 ctx.rotate(this.rotation);
-                if (imageCache.player.loaded) {
-                    const size = this.radius * 3;
-                    ctx.drawImage(imageCache.player.img, -size/2, -size/2, size, size);
-                } else {
-                    ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fillStyle = "#FFD700"; ctx.fill(); ctx.strokeStyle = "#333"; ctx.lineWidth = 3; ctx.stroke();
-                }
+                if (imageCache.player.loaded) { ctx.drawImage(imageCache.player.img, -this.radius * 1.5, -this.radius * 1.5, this.radius * 3, this.radius * 3); }
+                else { ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fillStyle = "#FFD700"; ctx.fill(); ctx.strokeStyle = "#333"; ctx.lineWidth = 3; ctx.stroke(); }
                 ctx.restore();
             },
             update: function() {
@@ -451,45 +423,28 @@
                     if (o.x + o.size < -50 || o.x > logicalWidth + 50) continue; 
                     const drawX = Math.floor(o.x);
                     const drawY = Math.floor(o.y);
-                    const size = Math.floor(o.size);
                     if (o.enemyCache && o.enemyCache.data.loaded) { ctx.drawImage(o.enemyCache.data.img, drawX, drawY); }
-                    else { ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(drawX + size/2, drawY + size/2, size/2, 0, Math.PI*2); ctx.fill(); }
+                    else { ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(drawX + o.size/2, drawY + o.size/2, o.size/2, 0, Math.PI*2); ctx.fill(); }
                 }
             },
             update: function() {
                 let lastItem = this.items.length > 0 ? this.items[this.items.length - 1] : null;
-                let spawnDist = SPAWN_INTERVAL - (Math.random() * 100); 
-                if (!lastItem || logicalWidth - (lastItem.x + lastItem.size) >= spawnDist) {
-                    let selectedCache = null;
-                    if (imageCache.enemies.length > 0) {
-                        let unlockedCount = Math.floor(score / LEVEL_STEP) + 1;
-                        if (unlockedCount > imageCache.enemies.length) unlockedCount = imageCache.enemies.length;
-                        const idx = Math.floor(Math.random() * unlockedCount);
-                        selectedCache = imageCache.enemies[idx];
-                    }
-                    let currentSize = selectedCache ? selectedCache.size : 100;
-                    let minY = 0; 
-                    let maxY = BASE_HEIGHT - currentSize;
-                    let _y = Math.random() * (maxY - minY) + minY;
-                    this.items.push({ x: logicalWidth, y: _y, size: currentSize, enemyCache: selectedCache, passed: false });
+                if (!lastItem || logicalWidth - (lastItem.x + lastItem.size) >= SPAWN_INTERVAL) {
+                    let unlockedCount = Math.min(Math.floor(score / LEVEL_STEP) + 1, imageCache.enemies.length);
+                    let selected = imageCache.enemies[Math.floor(Math.random() * unlockedCount)];
+                    let size = selected ? selected.size : 100;
+                    this.items.push({ x: logicalWidth, y: Math.random() * (BASE_HEIGHT - size), size: size, enemyCache: selected, passed: false });
                 }
                 for (let i = 0; i < this.items.length; i++) {
                     let o = this.items[i];
                     o.x -= gameSpeed;
-                    let centerX = o.x + o.size/2;
-                    let centerY = o.y + o.size/2;
-                    let dx = centerX - player.x;
-                    let dy = centerY - player.y;
-                    let distSq = dx*dx + dy*dy;
-                    let minDist = player.radius + (o.size / 2 * 0.8);
-                    if (distSq < minDist * minDist) { gameOver(); }
+                    let dx = (o.x + o.size/2) - player.x;
+                    let dy = (o.y + o.size/2) - player.y;
+                    if (dx*dx + dy*dy < Math.pow(player.radius + o.size/2.2, 2)) { gameOver(); }
                     if (o.x + o.size < player.x && !o.passed) {
-                        score += 10;
-                        scoreDisplay.innerText = score;
-                        let eIdx = (o.enemyCache) ? o.enemyCache.originalIndex : null;
-                        playSound('score', eIdx);
-                        o.passed = true;
-                        checkGameState();
+                        score += 10; scoreDisplay.innerText = score;
+                        playSound('score'); o.passed = true;
+                        if (score >= 1000) playBgm('fever');
                         if (score % LEVEL_STEP === 0) levelUp();
                     }
                     if (o.x + o.size < -200) { this.items.shift(); i--; }
@@ -497,11 +452,6 @@
             },
             reset: function() { this.items = []; }
         };
-
-        function checkGameState() {
-            if (score >= 1000) playBgm('fever');
-            else playBgm('normal');
-        }
 
         function drawBackground() {
             let imgObj = (score >= 1000 && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
@@ -512,19 +462,16 @@
                 if (bgX <= -imgW) bgX += imgW;
                 let drawX = Math.floor(bgX);
                 while (drawX < logicalWidth) {
-                    ctx.drawImage(imgObj.img, drawX, 0, imgW + 1, BASE_HEIGHT);
+                    ctx.drawImage(imgObj.img, drawX, 0, imgW + 1, BASE_HEIGHT); // +1px overlap to avoid gaps
                     drawX += imgW;
                 }
             }
         }
 
         function levelUp() {
-            if (currentLevel >= MAX_LEVEL) { levelDisplay.innerText = "Lv.MAX"; levelDisplay.style.color = "#ff0000"; return; }
-            currentLevel++;
-            if (gameSpeed < 15) gameSpeed += 0.8;
+            if (currentLevel >= MAX_LEVEL) { levelDisplay.innerText = "Lv.MAX"; return; }
+            currentLevel++; gameSpeed += 0.8;
             levelDisplay.innerText = "Lv." + currentLevel;
-            levelDisplay.style.color = "#ffeb3b"; 
-            setTimeout(() => { levelDisplay.style.color = "white"; }, 500);
         }
 
         function loop() {
@@ -533,15 +480,12 @@
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
             drawBackground();
             if (gameState === 'PLAYING') {
-                obstacles.update();
-                obstacles.draw();
-                player.update();
-                player.draw();
+                obstacles.update(); obstacles.draw();
+                player.update(); player.draw();
             }
             requestAnimationFrame(loop);
         }
 
-        // スタートボタン用に関数をグローバルに公開
         window.startGame = function() {
             gameState = 'PLAYING';
             startScreen.style.display = 'none';
@@ -550,24 +494,17 @@
             player.y = BASE_HEIGHT / 2;
             player.velocity = 0;
             obstacles.reset();
-            score = 0;
-            currentLevel = 1;
-            gameSpeed = INITIAL_SPEED;
-            checkGameState(); 
-            scoreDisplay.innerText = score;
+            score = 0; currentLevel = 1; gameSpeed = INITIAL_SPEED;
+            scoreDisplay.innerText = "0";
             levelDisplay.innerText = "Lv.1";
-            levelDisplay.style.color = "white";
+            playBgm('normal');
         };
 
         function gameOver() {
             gameState = 'GAMEOVER';
-            stopBgm(); 
-            playSound('gameover');
+            stopBgm(); playSound('gameover');
             finalScoreText.innerText = score;
-            
-            // ハイスコア保存
             saveHighScore(score);
-
             gameOverScreen.style.display = 'block';
             scoreDisplay.style.display = 'none';
             levelDisplay.style.display = 'none';
@@ -576,25 +513,17 @@
         window.backToTitle = function() {
             gameOverScreen.style.display = 'none';
             startScreen.style.display = 'block'; 
-            scoreDisplay.style.display = 'none';
-            levelDisplay.style.display = 'none';
             gameState = 'START';
-            score = 0; 
+            score = 0;
         };
 
         const handleJump = (e) => {
-            if (e.type === 'keydown' && e.code !== 'Space') return;
-            if (e.type === 'touchstart' && e.target.tagName === 'BUTTON') return;
-            if (e.target.type === 'range') return;
-            if (e.type !== 'mousedown' && e.cancelable) e.preventDefault(); 
+            if (e.target.type === 'range' || e.target.tagName === 'BUTTON') return;
+            if (e.cancelable) e.preventDefault();
             if (gameState === 'PLAYING') player.jump();
         };
-
-        window.addEventListener('keydown', handleJump);
-        window.addEventListener('mousedown', (e) => {
-            if (e.target.type === 'range') return;
-            if (gameState === 'PLAYING') player.jump();
-        });
+        window.addEventListener('keydown', (e) => { if (e.code === 'Space') handleJump(e); });
+        window.addEventListener('mousedown', handleJump);
         window.addEventListener('touchstart', handleJump, {passive: false});
 
         requestAnimationFrame(loop);
