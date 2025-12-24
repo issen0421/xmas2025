@@ -186,7 +186,7 @@
         <div id="start-screen" class="message-box">
             <h1>Avoid Rabuka!</h1>
             <p>前から飛んでくる敵を避けろ！</p>
-            <div id="start-best-score" class="high-score-text">自己ベスト: ---</div>
+            <div id="start-best-score" class="high-score-text">ハイスコア: ---</div>
             
             <div class="settings-area">
                 <div class="volume-control">
@@ -206,7 +206,7 @@
         <div id="game-over-screen" class="message-box" style="display: none;">
             <h1>あ〜あ、ぶつかっちゃいましたね〜</h1>
             <p>Score: <span id="final-score">0</span></p>
-            <div id="over-best-score" class="high-score-text">自己ベスト: ---</div>
+            <div id="over-best-score" class="high-score-text">ハイスコア: ---</div>
             <button onclick="backToTitle()">タイトルへ</button>
         </div>
     </div>
@@ -286,8 +286,8 @@
         }
 
         function updateHighScoreUI() {
-            startBestScoreText.innerText = "自己ベスト: " + highScore;
-            overBestScoreText.innerText = "自己ベスト: " + highScore;
+            startBestScoreText.innerText = "ハイスコア: " + highScore;
+            overBestScoreText.innerText = "ハイスコア: " + highScore;
         }
         updateHighScoreUI();
 
