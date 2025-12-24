@@ -233,6 +233,7 @@
         const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
         const BGM_SRC_NORMAL = './普通.mp3'; 
         const BGM_SRC_FEVER  = './FEVER.mp3'; 
+        const SOUND_INVASION_SRC = './warning.mp3'; // ★襲来時の音（ファイル名を設定してください）
 
         // ==========================================
         // ▼▼▼ ゲームバランス設定 ▼▼▼
@@ -302,6 +303,7 @@
             jump: new Audio(),
             gameover: new Audio(),
             score: new Audio(),
+            invasion: new Audio(), // 襲来音追加
             bgmNormal: new Audio(),
             bgmFever: new Audio(),
             custom: {} 
@@ -317,6 +319,7 @@
         loadAudio(sounds.jump, SOUND_JUMP_SRC);
         loadAudio(sounds.gameover, SOUND_GAMEOVER_SRC);
         loadAudio(sounds.score, SOUND_SCORE_SRC);
+        loadAudio(sounds.invasion, SOUND_INVASION_SRC); // 襲来音読み込み
         loadAudio(sounds.bgmNormal, BGM_SRC_NORMAL, true);
         loadAudio(sounds.bgmFever, BGM_SRC_FEVER, true);
 
@@ -329,76 +332,101 @@
             }
         });
 
+        // SE再生
+        let lastSeTime = 0;
         function playSound(type, enemyIndex = null) {
             if (seVolume <= 0) return;
-            let sound = (type === 'score' && enemyIndex !== null && sounds.custom['enemy_' + enemyIndex]) 
-                        ? sounds.custom['enemy_' + enemyIndex] 
-                        : sounds[type];
+            const now = Date.now();
+            if (type === 'score' && now - lastSeTime < 80) return; 
+            if (type === 'score') lastSeTime = now;
+
+            let sound = null;
+            if (type === 'score' && enemyIndex !== null && sounds.custom['enemy_' + enemyIndex]) {
+                sound = sounds.custom['enemy_' + enemyIndex];
+            } else {
+                sound = sounds[type];
+            }
+
             if (sound && sound.src) {
                 sound.currentTime = 0;
                 sound.volume = seVolume;
-                sound.play().catch(()=>{});
+                sound.play().catch(() => {});
             }
         }
 
-        let currentBgm = null;
+        // BGM制御
+        let currentBgmType = 'none';
         function playBgm(type) {
-            const target = (type === 'normal') ? sounds.bgmNormal : sounds.bgmFever;
-            if (currentBgm === target) {
-                if (target) target.volume = bgmVolume;
+            if (bgmVolume <= 0) {
+                stopBgm();
+                currentBgmType = type; 
                 return;
             }
-            if (currentBgm) { currentBgm.pause(); currentBgm.currentTime = 0; }
-            currentBgm = target;
-            if (currentBgm && currentBgm.src && bgmVolume > 0) {
-                currentBgm.volume = bgmVolume;
-                currentBgm.play().catch(()=>{});
+            if (currentBgmType === type) {
+                if (type === 'normal') sounds.bgmNormal.volume = bgmVolume;
+                if (type === 'fever') sounds.bgmFever.volume = bgmVolume;
+                return;
+            }
+            stopBgm();
+            let targetSound = (type === 'normal') ? sounds.bgmNormal : sounds.bgmFever;
+            if (targetSound && targetSound.src) {
+                targetSound.volume = bgmVolume;
+                targetSound.play().catch(() => {});
+                currentBgmType = type;
             }
         }
 
         function stopBgm() {
-            if (sounds.bgmNormal.src) { sounds.bgmNormal.pause(); sounds.bgmNormal.currentTime = 0; }
-            if (sounds.bgmFever.src) { sounds.bgmFever.pause(); sounds.bgmFever.currentTime = 0; }
-            currentBgm = null;
+            if (sounds.bgmNormal.src) {
+                sounds.bgmNormal.pause();
+                sounds.bgmNormal.currentTime = 0;
+            }
+            if (sounds.bgmFever.src) {
+                sounds.bgmFever.pause();
+                sounds.bgmFever.currentTime = 0;
+            }
+            currentBgmType = 'none';
         }
 
         // --- 画像処理 (キャッシュ & フォールバック) ---
-        const imageCache = { player: null, bgNormal: null, bgFever: null, enemies: [] };
+        const imageCache = {
+            player: null,
+            bgNormal: null,
+            bgFever: null,
+            enemies: []
+        };
+
         const tempCanvas = document.createElement('canvas');
         const tempCtx = tempCanvas.getContext('2d');
 
-        // 安全な画像加工処理（エラーが出たら生画像を使う）
-        function createCachedImage(src, w, h, circle = false) {
+        function createProcessedImage(imgSrc, width, height, isCircle = false) {
             const result = { img: null, loaded: false, isRaw: false };
-            if (!src) return result;
+            if (!imgSrc) return result;
             
             const rawImg = new Image();
-            rawImg.crossOrigin = "Anonymous"; // CORS対応（サーバー設定が必要だが念のため）
+            rawImg.crossOrigin = "Anonymous"; 
             
             rawImg.onload = () => {
                 try {
-                    tempCanvas.width = w; tempCanvas.height = h;
-                    tempCtx.clearRect(0, 0, w, h);
-                    if (circle) {
-                        tempCtx.beginPath(); tempCtx.arc(w/2, h/2, w/2, 0, Math.PI * 2); tempCtx.clip();
+                    tempCanvas.width = width; tempCanvas.height = height;
+                    tempCtx.clearRect(0, 0, width, height);
+                    if (isCircle) {
+                        tempCtx.beginPath(); tempCtx.arc(width/2, height/2, width/2, 0, Math.PI * 2); tempCtx.clip();
                     }
-                    tempCtx.drawImage(rawImg, 0, 0, w, h);
-                    
+                    tempCtx.drawImage(rawImg, 0, 0, width, height);
                     const processed = new Image();
                     processed.src = tempCanvas.toDataURL();
                     result.img = processed;
                     result.loaded = true;
                 } catch (e) {
-                    // セキュリティエラー等で加工できない場合は生画像を使う
-                    console.warn("Image processing failed, using raw image.", e);
+                    // console.warn("Image processing failed, using raw image.", e);
                     result.img = rawImg;
                     result.loaded = true;
                     result.isRaw = true;
                 }
             };
-            // エラー時もロード完了扱いにしないと表示されない
-            rawImg.onerror = () => { console.warn("Image load failed: " + src); };
-            rawImg.src = src;
+            rawImg.onerror = () => { /* console.warn("Image load failed: " + src); */ };
+            rawImg.src = imgSrc;
             return result;
         }
 
@@ -411,14 +439,14 @@
         }
 
         // 画像初期化
-        imageCache.player = createCachedImage(PLAYER_IMAGE_SRC, PLAYER_RADIUS * 3, PLAYER_RADIUS * 3, true);
+        imageCache.player = createProcessedImage(PLAYER_IMAGE_SRC, PLAYER_RADIUS * 3, PLAYER_RADIUS * 3, true);
         imageCache.bgNormal = loadBg(BACKGROUND_IMAGE_NORMAL);
         imageCache.bgFever = loadBg(BACKGROUND_IMAGE_FEVER);
 
         ENEMY_DATA.forEach((d, idx) => {
             if (d.src) {
                 imageCache.enemies.push({ 
-                    data: createCachedImage(d.src, d.size, d.size, false), 
+                    data: createProcessedImage(d.src, d.size, d.size, false), 
                     size: d.size, 
                     id: idx, 
                     name: d.name 
@@ -444,6 +472,7 @@
 
         // --- ゲーム内演出 ---
         function showInvasionBanner(name) {
+            playSound('invasion'); // 襲来音再生
             invasionBanner.innerText = `⚠️ ${name} ⚠️`;
             invasionBanner.style.display = 'block';
             requestAnimationFrame(() => { invasionBanner.classList.add('active'); });
@@ -472,10 +501,8 @@
                 if (imageCache.player.loaded) {
                     const size = PLAYER_RADIUS * 3;
                     if (imageCache.player.isRaw) {
-                        // 生画像の場合は円形カットされていないのでそのまま描画
                         ctx.drawImage(imageCache.player.img, -size/2, -size/2, size, size);
                     } else {
-                        // 加工済み画像
                         ctx.drawImage(imageCache.player.img, -size/2, -size/2, size, size);
                     }
                 } else {
@@ -554,27 +581,8 @@
             else playBgm('normal');
         }
 
-        function levelUp() {
-            if (currentLevel >= MAX_LEVEL) { levelDisplay.innerText = "Lv.MAX"; levelDisplay.style.color = "#ff0000"; return; }
-            currentLevel++; 
-            if (gameSpeed < 15) gameSpeed += 0.8;
-            levelDisplay.innerText = "Lv." + currentLevel;
-            levelDisplay.style.color = "#ffeb3b"; 
-            setTimeout(() => { levelDisplay.style.color = "white"; }, 500);
-        }
-
-        function drawBg() {
-            // FEVER判定
-            let isFever = score >= 1000;
-            let imgObj = (isFever && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
-            
-            // レインボー背景制御
-            if (isFever && !imageCache.bgFever.loaded) {
-                canvas.classList.add('rainbow-bg');
-            } else {
-                canvas.classList.remove('rainbow-bg');
-            }
-
+        function drawBackground() {
+            let imgObj = (score >= 1000 && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
             if (imgObj && imgObj.loaded) {
                 const scrollSpeed = (gameState === 'PLAYING') ? gameSpeed * 0.5 : 1; 
                 bgX -= scrollSpeed; 
@@ -588,21 +596,35 @@
             }
         }
 
+        function levelUp() {
+            if (currentLevel >= MAX_LEVEL) {
+                levelDisplay.innerText = "Lv.MAX";
+                levelDisplay.style.color = "#ff0000"; 
+                return;
+            }
+            currentLevel++;
+            if (gameSpeed < 15) gameSpeed += 0.8;
+            levelDisplay.innerText = "Lv." + currentLevel;
+            levelDisplay.style.color = "#ffeb3b"; 
+            setTimeout(() => { levelDisplay.style.color = "white"; }, 500);
+        }
+
         function loop() {
             ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
             
-            drawBg();
+            drawBackground();
+
             if (gameState === 'PLAYING') {
                 obstacles.update();
                 obstacles.draw();
                 player.update();
                 player.draw();
             }
+
             requestAnimationFrame(loop);
         }
 
-        // --- ゲーム進行 ---
         // グローバル関数定義
         window.startGame = function() {
             gameState = 'PLAYING';
@@ -612,7 +634,7 @@
             levelDisplay.style.display = 'block';
             
             player.y = BASE_HEIGHT / 2;
-            player.v = 0;
+            player.velocity = 0;
             obstacles.list = [];
             score = 0; 
             currentLevel = 1; 
@@ -648,6 +670,8 @@
         window.backToTitle = function() {
             gameOverScreen.style.display = 'none';
             startScreen.style.display = 'block'; 
+            scoreDisplay.style.display = 'none';
+            levelDisplay.style.display = 'none';
             gameState = 'START';
             score = 0;
             canvas.classList.remove('rainbow-bg');
