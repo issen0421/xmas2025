@@ -27,6 +27,30 @@
             image-rendering: -webkit-optimize-contrast; 
         }
         
+        /* 襲来バナー */
+        #invasion-banner {
+            position: absolute;
+            top: 20%;
+            width: 100%;
+            text-align: center;
+            font-size: 40px;
+            font-weight: 900;
+            color: #ff0000;
+            text-shadow: 
+                2px 2px 0 #fff, -1px -1px 0 #fff,  
+                1px -1px 0 #fff, -1px 1px 0 #fff, 1px 1px 0 #fff;
+            opacity: 0;
+            transform: scale(0.5);
+            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            pointer-events: none;
+            z-index: 30;
+            display: none;
+        }
+        #invasion-banner.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+
         #ui-layer {
             position: absolute;
             top: 0;
@@ -71,33 +95,6 @@
             margin-bottom: 15px;
         }
         
-        /* ▼▼▼ 襲来バナーのスタイル ▼▼▼ */
-        #invasion-banner {
-            position: absolute;
-            top: 120px; /* スコアの下あたり */
-            width: 100%;
-            text-align: center;
-            font-size: 40px;
-            font-weight: 900;
-            color: #ff0000; /* 赤文字 */
-            text-shadow: 
-                3px 3px 0 #fff,
-                -1px -1px 0 #fff,  
-                1px -1px 0 #fff,
-                -1px 1px 0 #fff,
-                1px 1px 0 #fff; /* 白縁取り */
-            opacity: 0; /* 最初は隠す */
-            transform: scale(0.5);
-            transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            pointer-events: none;
-            z-index: 15;
-            display: none; /* JSでblockにする */
-        }
-        #invasion-banner.active {
-            opacity: 1;
-            transform: scale(1);
-        }
-        
         .settings-area {
             margin: 10px 0 20px 0;
             background: #f0f0f0;
@@ -138,6 +135,7 @@
         button:active {
             transform: scale(0.95);
         }
+        /* IDを修正してCSSと一致させました */
         #score-display {
             position: absolute;
             top: 20px;
@@ -148,7 +146,7 @@
             text-shadow: 3px 3px 0 #000;
             pointer-events: none;
             z-index: 10;
-            display: none;
+            display: none; /* 初期状態は非表示 */
         }
         #level-display {
             position: absolute;
@@ -159,7 +157,18 @@
             text-shadow: 1px 1px 0 #000;
             pointer-events: none;
             z-index: 10;
-            display: none;
+            display: none; /* 初期状態は非表示 */
+        }
+        /* 背景アニメーション */
+        @keyframes rainbow {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+        .rainbow-bg {
+            background: linear-gradient(270deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3) !important;
+            background-size: 400% 400% !important;
+            animation: rainbow 3s ease infinite !important;
         }
     </style>
 </head>
@@ -167,8 +176,6 @@
 
     <div id="score-display">0</div>
     <div id="level-display">Lv.1</div>
-    
-    <!-- 襲来バナー -->
     <div id="invasion-banner">WARNING</div>
 
     <canvas id="gameCanvas"></canvas>
@@ -203,28 +210,23 @@
         </div>
     </div>
 
-    <!-- Firebase Logic -->
+    <!-- Firebase / Logic -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
         import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
-        // ==========================================
-        // ▼▼▼ 画像の設定 ▼▼▼
-        // ==========================================
+        // --- 設定 ---
         const PLAYER_IMAGE_SRC = './Rabuka.png'; 
         const BACKGROUND_IMAGE_NORMAL = './sozai_image_191339.png'; 
         const BACKGROUND_IMAGE_FEVER  = './color0083.png'; 
 
-        // ==========================================
-        // ▼▼▼ 敵キャラの設定 (名前を追加しました！) ▼▼▼
-        // ==========================================
         const ENEMY_DATA = [
-            { src: './issen.png', size: 100, name: '一仙' }, // 最初の敵（バナー出ません）
-            { src: './TD.png',    size: 100, name: 'TD襲来' }, 
-            { src: './魚卵.png',  size: 100, name: '魚卵襲来' }, 
-            { src: './houou.png', size: 120, name: 'ホウオウ襲来' }, 
-            { src: './rugia.png', size: 150, name: 'ルギア襲来' } 
+            { src: './issen.png', size: 100, name: 'いっせん' },
+            { src: './TD.png',    size: 100, name: 'TD襲来' },
+            { src: './魚卵.png',  size: 100, name: '魚卵襲来' },
+            { src: './houou.png', size: 120, name: 'ホウオウ襲来' },
+            { src: './rugia.png', size: 150, name: 'ルギア襲来' }
         ];
 
         const SOUND_JUMP_SRC = './ニュッ2.mp3';      
@@ -271,9 +273,16 @@
                         fetchHighScore(userId);
                     }
                 });
+            } else {
+                // ローカルストレージから読み込み（Firebaseがない場合）
+                const saved = localStorage.getItem('avoidRabukaHighScore');
+                if (saved) {
+                    highScore = parseInt(saved);
+                    updateHighScoreUI();
+                }
             }
         } catch (e) {
-            console.warn("Firebase initialization skipped or failed.", e);
+            console.warn("Firebase init skipped.", e);
         }
 
         async function fetchHighScore(uid) {
@@ -291,6 +300,7 @@
         async function saveHighScore(newScore) {
             if (newScore <= highScore) return;
             highScore = newScore;
+            localStorage.setItem('avoidRabukaHighScore', highScore); // ローカルにも保存
             updateHighScoreUI();
             if (!db || !userId) return;
             const scoreDoc = doc(db, 'artifacts', appId, 'users', userId, 'data', 'highScore');
@@ -298,11 +308,15 @@
         }
 
         function updateHighScoreUI() {
-            document.getElementById('start-best-score').innerText = `自己ベスト: ${highScore}`;
-            document.getElementById('over-best-score').innerText = `自己ベスト: ${highScore}`;
+            const startEl = document.getElementById('start-best-score');
+            const overEl = document.getElementById('over-best-score');
+            if(startEl) startEl.innerText = `自己ベスト: ${highScore}`;
+            if(overEl) overEl.innerText = `自己ベスト: ${highScore}`;
         }
 
-        // --- ゲームエンジン ---
+        // ==========================================
+        // ゲームエンジン
+        // ==========================================
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d', { alpha: false }); 
         const scoreDisplay = document.getElementById('score-display');
@@ -310,7 +324,7 @@
         const startScreen = document.getElementById('start-screen');
         const gameOverScreen = document.getElementById('game-over-screen');
         const finalScoreText = document.getElementById('final-score');
-        const invasionBanner = document.getElementById('invasion-banner'); // バナー要素
+        const invasionBanner = document.getElementById('invasion-banner');
         const bgmSlider = document.getElementById('bgm-slider');
         const seSlider = document.getElementById('se-slider');
 
@@ -323,23 +337,64 @@
         let bgX = 0; 
         let bgmVolume = 0.3;
         let seVolume = 0.5;
-        let maxUnlockedIndex = 0; // 現在解禁されている敵のインデックス最大値
+        let maxUnlockedIndex = 0; 
 
-        // 音声
+        // 音声読み込み
         const sounds = {
-            jump: new Audio(SOUND_JUMP_SRC),
-            gameover: new Audio(SOUND_GAMEOVER_SRC),
-            score: new Audio(SOUND_SCORE_SRC),
-            bgmNormal: new Audio(BGM_SRC_NORMAL),
-            bgmFever: new Audio(BGM_SRC_FEVER)
+            jump: new Audio(),
+            gameover: new Audio(),
+            score: new Audio(),
+            bgmNormal: new Audio(),
+            bgmFever: new Audio(),
+            custom: {} 
         };
-        sounds.bgmNormal.loop = true;
-        sounds.bgmFever.loop = true;
+        
+        function loadAudio(audioObj, src, isBgm) {
+            if (!src) return;
+            audioObj.src = src;
+            if (isBgm) audioObj.loop = true;
+            audioObj.preload = 'auto'; 
+        }
 
-        function playSound(type) {
+        loadAudio(sounds.jump, SOUND_JUMP_SRC);
+        loadAudio(sounds.gameover, SOUND_GAMEOVER_SRC);
+        loadAudio(sounds.score, SOUND_SCORE_SRC);
+        loadAudio(sounds.bgmNormal, BGM_SRC_NORMAL, true);
+        loadAudio(sounds.bgmFever, BGM_SRC_FEVER, true);
+
+        // 敵ごとの音声プリロード
+        ENEMY_DATA.forEach((data, index) => {
+            if (data.scoreSound) {
+                const audio = new Audio();
+                loadAudio(audio, data.scoreSound);
+                sounds.custom['enemy_' + index] = audio;
+            }
+        });
+
+        // 音量スライダー
+        if(bgmSlider) {
+            bgmSlider.addEventListener('input', (e) => {
+                bgmVolume = parseFloat(e.target.value);
+                if (sounds.bgmNormal) sounds.bgmNormal.volume = bgmVolume;
+                if (sounds.bgmFever) sounds.bgmFever.volume = bgmVolume;
+            });
+        }
+        if(seSlider) {
+            seSlider.addEventListener('input', (e) => {
+                seVolume = parseFloat(e.target.value);
+            });
+        }
+
+        function playSound(type, enemyIndex = null) {
             if (seVolume <= 0) return;
-            const s = sounds[type];
-            if (s && s.src) { s.currentTime = 0; s.volume = seVolume; s.play().catch(()=>{}); }
+            let sound = (type === 'score' && enemyIndex !== null && sounds.custom['enemy_' + enemyIndex]) 
+                        ? sounds.custom['enemy_' + enemyIndex] 
+                        : sounds[type];
+            if (sound && sound.src) {
+                sound.currentTime = 0;
+                sound.volume = seVolume;
+                sound.play().catch(()=>{});
+            }
         }
 
         let currentBgm = null;
@@ -357,13 +412,14 @@
             }
         }
 
-        // 画像キャッシュ
+        // 画像キャッシュ生成
         const imageCache = { player: null, bgNormal: null, bgFever: null, enemies: [] };
         const tempCanvas = document.createElement('canvas');
         const tempCtx = tempCanvas.getContext('2d');
 
         function createCachedImage(src, w, h, circle = false) {
             const result = { img: null, loaded: false };
+            if(!src) return result;
             const img = new Image();
             img.onload = () => {
                 tempCanvas.width = w; tempCanvas.height = h;
@@ -377,14 +433,15 @@
             return result;
         }
 
-        imageCache.player = createCachedImage(PLAYER_IMAGE_SRC, PLAYER_RADIUS * 3, PLAYER_RADIUS * 3, true);
-        
         function loadBg(src) {
             const res = { img: new Image(), loaded: false };
+            if(!src) return res;
             res.img.onload = () => { res.loaded = true; };
             res.img.src = src;
             return res;
         }
+
+        imageCache.player = createCachedImage(PLAYER_IMAGE_SRC, PLAYER_RADIUS * 3, PLAYER_RADIUS * 3, true);
         imageCache.bgNormal = loadBg(BACKGROUND_IMAGE_NORMAL);
         imageCache.bgFever = loadBg(BACKGROUND_IMAGE_FEVER);
 
@@ -392,6 +449,7 @@
             imageCache.enemies.push({ data: createCachedImage(d.src, d.size, d.size), size: d.size, id: idx, name: d.name });
         });
 
+        // 画面リサイズ
         function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
@@ -405,24 +463,18 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // バナー表示関数
+        // バナー表示
         function showInvasionBanner(name) {
             invasionBanner.innerText = `⚠️ ${name} ⚠️`;
             invasionBanner.style.display = 'block';
-            // 少し遅らせてアニメーションクラスを付与
-            requestAnimationFrame(() => {
-                invasionBanner.classList.add('active');
-            });
-            
-            // 3秒後に消す
+            requestAnimationFrame(() => { invasionBanner.classList.add('active'); });
             setTimeout(() => {
                 invasionBanner.classList.remove('active');
-                setTimeout(() => {
-                    invasionBanner.style.display = 'none';
-                }, 500); // フェードアウト待ち
+                setTimeout(() => { invasionBanner.style.display = 'none'; }, 500);
             }, 3000);
         }
 
+        // キャラクターロジック
         const player = {
             y: 360, v: 0,
             update() {
@@ -435,132 +487,4 @@
                 ctx.translate(100, Math.floor(this.y));
                 ctx.rotate(Math.min(Math.PI/4, Math.max(-Math.PI/4, this.v * 0.1)));
                 if (imageCache.player.loaded) {
-                    ctx.drawImage(imageCache.player.img, -PLAYER_RADIUS*1.5, -PLAYER_RADIUS*1.5, PLAYER_RADIUS*3, PLAYER_RADIUS*3);
-                } else {
-                    ctx.beginPath(); ctx.arc(0, 0, PLAYER_RADIUS, 0, Math.PI*2); ctx.fillStyle = "gold"; ctx.fill();
-                }
-                ctx.restore();
-            }
-        };
-
-        const obstacles = {
-            list: [],
-            update() {
-                let last = this.list[this.list.length - 1];
-                if (!last || logicalWidth - (last.x + last.s) >= SPAWN_INTERVAL) {
-                    let unlockedCount = Math.floor(score / LEVEL_STEP) + 1;
-                    let unlockedCap = Math.min(unlockedCount, imageCache.enemies.length);
-                    let enemy = imageCache.enemies[Math.floor(Math.random() * unlockedCap)];
-                    this.list.push({ x: logicalWidth, y: Math.random() * (BASE_HEIGHT - enemy.size), s: enemy.size, cache: enemy, passed: false });
-                }
-                for (let i = 0; i < this.list.length; i++) {
-                    let o = this.list[i]; o.x -= gameSpeed;
-                    let dx = (o.x + o.s/2) - 100; let dy = (o.y + o.s/2) - player.y;
-                    if (dx*dx + dy*dy < Math.pow(PLAYER_RADIUS + o.s/2.2, 2)) gameOver();
-                    
-                    if (o.x + o.s < 100 && !o.passed) {
-                        score += 10; scoreOverlay.innerText = score;
-                        playSound('score'); o.passed = true;
-                        
-                        if (score >= 1000) playBgm('fever');
-                        if (score % LEVEL_STEP === 0) levelUp();
-
-                        // 襲来チェック
-                        let nextUnlockedCount = Math.floor(score / LEVEL_STEP) + 1;
-                        if (nextUnlockedCount > maxUnlockedIndex + 1) {
-                            maxUnlockedIndex++;
-                            // インデックスが範囲内で、かつ最初の敵(0)以外ならバナー表示
-                            if (maxUnlockedIndex < imageCache.enemies.length && maxUnlockedIndex > 0) {
-                                showInvasionBanner(imageCache.enemies[maxUnlockedIndex].name);
-                            }
-                        }
-                    }
-                    if (o.x + o.s < -100) { this.list.splice(i, 1); i--; }
-                }
-            },
-            draw() {
-                for (let o of this.list) {
-                    if (o.cache && o.cache.data.loaded) ctx.drawImage(o.cache.data.img, Math.floor(o.x), Math.floor(o.y));
-                    else { ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(o.x+o.s/2, o.y+o.s/2, o.s/2, 0, Math.PI*2); ctx.fill(); }
-                }
-            }
-        };
-
-        function levelUp() {
-            if (currentLevel >= MAX_LEVEL) { levelOverlay.innerText = "Lv.MAX"; return; }
-            currentLevel++; gameSpeed += 0.8;
-            levelOverlay.innerText = "Lv." + currentLevel;
-        }
-
-        function drawBg() {
-            let imgObj = (score >= 1000 && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
-            if (imgObj && imgObj.loaded) {
-                bgX -= (gameState === 'PLAYING') ? gameSpeed * 0.5 : 1;
-                let w = Math.floor(imgObj.img.width * (BASE_HEIGHT / imgObj.img.height));
-                if (bgX <= -w) bgX += w;
-                for (let x = Math.floor(bgX); x < logicalWidth; x += w) {
-                    ctx.drawImage(imgObj.img, x, 0, w + 1, BASE_HEIGHT);
-                }
-            }
-        }
-
-        function loop() {
-            ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
-            drawBg();
-            if (gameState === 'PLAYING') { obstacles.update(); obstacles.draw(); player.update(); player.draw(); }
-            requestAnimationFrame(loop);
-        }
-
-        // グローバル関数登録
-        window.startGame = () => {
-            bgmVolume = parseFloat(bgmSlider.value);
-            seVolume = parseFloat(seSlider.value);
-            gameState = 'PLAYING';
-            startScreen.style.display = 'none';
-            gameOverScreen.style.display = 'none';
-            scoreOverlay.style.display = 'block';
-            levelOverlay.style.display = 'block';
-            player.y = 360; player.v = 0;
-            obstacles.list = [];
-            score = 0; currentLevel = 1; gameSpeed = INITIAL_SPEED;
-            maxUnlockedIndex = 0; // 襲来状態リセット
-            scoreOverlay.innerText = "0"; levelOverlay.innerText = "Lv.1";
-            playBgm('normal');
-        };
-
-        function gameOver() {
-            gameState = 'GAMEOVER';
-            if (currentBgm) currentBgm.pause();
-            playSound('gameover');
-            finalScoreText.innerText = score;
-            saveHighScore(score);
-            gameOverScreen.style.display = 'block';
-            scoreOverlay.style.display = 'none';
-            levelOverlay.style.display = 'none';
-            // バナーを強制非表示
-            invasionBanner.classList.remove('active');
-            invasionBanner.style.display = 'none';
-        }
-
-        window.backToTitle = () => {
-            gameOverScreen.style.display = 'none';
-            startScreen.style.display = 'block';
-            gameState = 'START';
-            score = 0;
-            if (currentBgm) { currentBgm.pause(); currentBgm.currentTime = 0; currentBgm = null; }
-        };
-
-        const handleAction = (e) => {
-            if (e.target.type === 'range' || e.target.tagName === 'BUTTON') return;
-            if (e.cancelable) e.preventDefault();
-            if (gameState === 'PLAYING') player.v = JUMP_STRENGTH, playSound('jump');
-        };
-        window.addEventListener('keydown', (e) => { if (e.code === 'Space') handleAction(e); });
-        window.addEventListener('mousedown', handleAction);
-        window.addEventListener('touchstart', handleAction, {passive: false});
-
-        requestAnimationFrame(loop);
-    </script>
-</body>
-</html>
+                    ctx.drawImage(imageCache.player.img, -PLAYER_RADIUS*1.5, -PLAYER_RADIUS*1.5, PLAYER_RADIUS*3, PLAYER
