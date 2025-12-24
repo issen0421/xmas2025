@@ -15,10 +15,13 @@
             user-select: none;
             -webkit-user-select: none;
             -webkit-tap-highlight-color: transparent;
+            width: 100vw;
+            height: 100vh;
         }
         #gameCanvas {
             display: block;
-            margin: 0 auto;
+            width: 100%;
+            height: 100%;
             background: linear-gradient(to bottom, #70c5ce 0%, #ffffff 100%); 
             transition: background 1s ease;
             image-rendering: -webkit-optimize-contrast; 
@@ -108,7 +111,7 @@
         button:active {
             transform: scale(0.95);
         }
-        #score-display {
+        #score-overlay {
             position: absolute;
             top: 20px;
             left: 20px;
@@ -120,7 +123,7 @@
             z-index: 10;
             display: none;
         }
-        #level-display {
+        #level-overlay {
             position: absolute;
             top: 70px;
             left: 25px;
@@ -135,8 +138,8 @@
 </head>
 <body>
 
-    <div id="score-display">0</div>
-    <div id="level-display">Lv.1</div>
+    <div id="score-overlay">0</div>
+    <div id="level-overlay">Lv.1</div>
 
     <canvas id="gameCanvas"></canvas>
 
@@ -158,7 +161,7 @@
                 </div>
             </div>
 
-            <button onclick="startGame()">スタート！</button>
+            <button onclick="window.startGame()">スタート！</button>
         </div>
 
         <!-- ゲームオーバー画面 -->
@@ -166,19 +169,17 @@
             <h1>あ〜あ、ぶつかっちゃいましたね〜</h1>
             <p>Score: <span id="final-score">0</span></p>
             <div id="over-best-score" class="high-score-text">自己ベスト: ---</div>
-            <button onclick="backToTitle()">タイトルへ</button>
+            <button onclick="window.backToTitle()">タイトルへ</button>
         </div>
     </div>
 
-    <!-- Firebase / Logic -->
+    <!-- Firebase Logic -->
     <script type="module">
         import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
         import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
         import { getFirestore, doc, getDoc, setDoc } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
 
-        // ==========================================
-        // ▼▼▼ 画像の設定 ▼▼▼
-        // ==========================================
+        // --- 設定 ---
         const PLAYER_IMAGE_SRC = './Rabuka.png'; 
         const BACKGROUND_IMAGE_NORMAL = './sozai_image_191339.png'; 
         const BACKGROUND_IMAGE_FEVER  = './color0083.png'; 
@@ -193,7 +194,7 @@
 
         const SOUND_JUMP_SRC = './ニュッ2.mp3';      
         const SOUND_GAMEOVER_SRC = './「残念」.mp3';  
-        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
+        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
         const BGM_SRC_NORMAL = './普通.mp3'; 
         const BGM_SRC_FEVER  = './FEVER.mp3'; 
 
@@ -201,37 +202,64 @@
         const LEVEL_STEP = 150;
         const SPAWN_INTERVAL = 350;
         const MAX_LEVEL = 20;
+        const BASE_HEIGHT = 720; 
+        const INITIAL_SPEED = 5;
+        const GRAVITY = 0.4;
+        const JUMP_STRENGTH = -8;
 
-        // Firebase Init
-        const firebaseConfig = JSON.parse(__firebase_config);
-        const app = initializeApp(firebaseConfig);
-        const auth = getAuth(app);
-        const db = getFirestore(app);
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
+        // --- Firebase 初期化 (エラー保護付き) ---
+        let db = null;
         let userId = null;
         let highScore = 0;
+        let appId = 'face-flappy-rabuka';
 
-        // ハイスコア同期
+        try {
+            if (typeof __firebase_config !== 'undefined') {
+                const firebaseConfig = JSON.parse(__firebase_config);
+                const app = initializeApp(firebaseConfig);
+                const auth = getAuth(app);
+                db = getFirestore(app);
+                appId = typeof __app_id !== 'undefined' ? __app_id : appId;
+
+                const initAuth = async () => {
+                    if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                        await signInWithCustomToken(auth, __initial_auth_token);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+                };
+                initAuth();
+
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        fetchHighScore(userId);
+                    }
+                });
+            }
+        } catch (e) {
+            console.warn("Firebase initialization skipped or failed.", e);
+        }
+
         async function fetchHighScore(uid) {
+            if (!db) return;
             const scoreDoc = doc(db, 'artifacts', appId, 'users', uid, 'data', 'highScore');
             try {
                 const snap = await getDoc(scoreDoc);
                 if (snap.exists()) {
                     highScore = snap.data().value || 0;
+                    updateHighScoreUI();
                 }
-                updateHighScoreUI();
-            } catch (e) { console.error("Fetch score failed", e); }
+            } catch (e) { console.error(e); }
         }
 
         async function saveHighScore(newScore) {
-            if (!userId || newScore <= highScore) return;
+            if (newScore <= highScore) return;
             highScore = newScore;
             updateHighScoreUI();
+            if (!db || !userId) return;
             const scoreDoc = doc(db, 'artifacts', appId, 'users', userId, 'data', 'highScore');
-            try {
-                await setDoc(scoreDoc, { value: highScore });
-            } catch (e) { console.error("Save score failed", e); }
+            try { await setDoc(scoreDoc, { value: highScore }); } catch (e) { console.error(e); }
         }
 
         function updateHighScoreUI() {
@@ -239,100 +267,16 @@
             document.getElementById('over-best-score').innerText = `自己ベスト: ${highScore}`;
         }
 
-        const initAuth = async () => {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                await signInWithCustomToken(auth, __initial_auth_token);
-            } else {
-                await signInAnonymously(auth);
-            }
-        };
-        initAuth();
-
-        onAuthStateChanged(auth, (user) => {
-            if (user) {
-                userId = user.uid;
-                fetchHighScore(userId);
-            }
-        });
-
-        // ==========================================
-        // ゲームロジック
-        // ==========================================
+        // --- ゲームエンジン ---
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d', { alpha: false }); 
-        const scoreDisplay = document.getElementById('score-display');
-        const levelDisplay = document.getElementById('level-display');
+        const scoreOverlay = document.getElementById('score-overlay');
+        const levelOverlay = document.getElementById('level-overlay');
         const startScreen = document.getElementById('start-screen');
         const gameOverScreen = document.getElementById('game-over-screen');
         const finalScoreText = document.getElementById('final-score');
         const bgmSlider = document.getElementById('bgm-slider');
         const seSlider = document.getElementById('se-slider');
-
-        let bgmVolume = parseFloat(bgmSlider.value);
-        let seVolume = parseFloat(seSlider.value);
-
-        bgmSlider.addEventListener('input', (e) => {
-            bgmVolume = parseFloat(e.target.value);
-            if (sounds.bgmNormal) sounds.bgmNormal.volume = bgmVolume;
-            if (sounds.bgmFever) sounds.bgmFever.volume = bgmVolume;
-        });
-        seSlider.addEventListener('input', (e) => {
-            seVolume = parseFloat(e.target.value);
-        });
-
-        const sounds = {
-            jump: new Audio(),
-            gameover: new Audio(),
-            score: new Audio(),
-            bgmNormal: new Audio(),
-            bgmFever: new Audio()
-        };
-        
-        function loadAudio(audioObj, src, isBgm) {
-            if (!src) return;
-            audioObj.src = src;
-            if (isBgm) audioObj.loop = true;
-            audioObj.preload = 'auto'; 
-        }
-
-        loadAudio(sounds.jump, SOUND_JUMP_SRC);
-        loadAudio(sounds.gameover, SOUND_GAMEOVER_SRC);
-        loadAudio(sounds.score, SOUND_SCORE_SRC);
-        loadAudio(sounds.bgmNormal, BGM_SRC_NORMAL, true);
-        loadAudio(sounds.bgmFever, BGM_SRC_FEVER, true);
-
-        function playSound(type) {
-            if (seVolume <= 0) return;
-            let sound = sounds[type];
-            if (sound && sound.src) {
-                sound.currentTime = 0;
-                sound.volume = seVolume;
-                sound.play().catch(() => {});
-            }
-        }
-
-        let currentBgmType = 'none';
-        function playBgm(type) {
-            if (bgmVolume <= 0) { stopBgm(); currentBgmType = type; return; }
-            if (currentBgmType === type) return;
-            stopBgm();
-            let target = (type === 'normal') ? sounds.bgmNormal : sounds.bgmFever;
-            if (target && target.src) {
-                target.volume = bgmVolume;
-                target.play().catch(() => {});
-                currentBgmType = type;
-            }
-        }
-        function stopBgm() {
-            if (sounds.bgmNormal.src) { sounds.bgmNormal.pause(); sounds.bgmNormal.currentTime = 0; }
-            if (sounds.bgmFever.src) { sounds.bgmFever.pause(); sounds.bgmFever.currentTime = 0; }
-            currentBgmType = 'none';
-        }
-
-        const BASE_HEIGHT = 720; 
-        const INITIAL_SPEED = 5;
-        const GRAVITY = 0.4;
-        const JUMP_STRENGTH = -8;
 
         let scaleRatio = 1; 
         let logicalWidth = 0; 
@@ -341,190 +285,208 @@
         let currentLevel = 1;
         let gameSpeed = INITIAL_SPEED;
         let bgX = 0; 
+        let bgmVolume = 0.3;
+        let seVolume = 0.5;
 
+        // 音声
+        const sounds = {
+            jump: new Audio(SOUND_JUMP_SRC),
+            gameover: new Audio(SOUND_GAMEOVER_SRC),
+            score: new Audio(SOUND_SCORE_SRC),
+            bgmNormal: new Audio(BGM_SRC_NORMAL),
+            bgmFever: new Audio(BGM_SRC_FEVER)
+        };
+        sounds.bgmNormal.loop = true;
+        sounds.bgmFever.loop = true;
+
+        function playSound(type) {
+            if (seVolume <= 0) return;
+            const s = sounds[type];
+            if (s && s.src) { s.currentTime = 0; s.volume = seVolume; s.play().catch(()=>{}); }
+        }
+
+        let currentBgm = null;
+        function playBgm(type) {
+            const target = (type === 'normal') ? sounds.bgmNormal : sounds.bgmFever;
+            if (currentBgm === target) {
+                if (target) target.volume = bgmVolume;
+                return;
+            }
+            if (currentBgm) { currentBgm.pause(); currentBgm.currentTime = 0; }
+            currentBgm = target;
+            if (currentBgm && currentBgm.src && bgmVolume > 0) {
+                currentBgm.volume = bgmVolume;
+                currentBgm.play().catch(()=>{});
+            }
+        }
+
+        // 画像キャッシュ
         const imageCache = { player: null, bgNormal: null, bgFever: null, enemies: [] };
         const tempCanvas = document.createElement('canvas');
         const tempCtx = tempCanvas.getContext('2d');
 
-        function createProcessedImage(imgSrc, width, height, isCircle = false) {
-            if (!imgSrc) return { img: null, loaded: false };
-            const rawImg = new Image();
+        function createCachedImage(src, w, h, circle = false) {
             const result = { img: null, loaded: false };
-            rawImg.onload = () => {
-                tempCanvas.width = width;
-                tempCanvas.height = height;
-                tempCtx.clearRect(0, 0, width, height);
-                if (isCircle) { tempCtx.beginPath(); tempCtx.arc(width/2, height/2, width/2, 0, Math.PI * 2); tempCtx.clip(); }
-                tempCtx.drawImage(rawImg, 0, 0, width, height);
-                const processed = new Image();
-                processed.src = tempCanvas.toDataURL();
-                result.img = processed;
-                result.loaded = true;
+            const img = new Image();
+            img.onload = () => {
+                tempCanvas.width = w; tempCanvas.height = h;
+                tempCtx.clearRect(0, 0, w, h);
+                if (circle) { tempCtx.beginPath(); tempCtx.arc(w/2, h/2, w/2, 0, Math.PI*2); tempCtx.clip(); }
+                tempCtx.drawImage(img, 0, 0, w, h);
+                const out = new Image(); out.src = tempCanvas.toDataURL();
+                result.img = out; result.loaded = true;
             };
-            rawImg.src = imgSrc;
+            img.src = src;
             return result;
         }
 
-        imageCache.player = createProcessedImage(PLAYER_IMAGE_SRC, PLAYER_RADIUS * 3, PLAYER_RADIUS * 3, true);
-        function loadBgImage(src) {
-            if (!src) return { img: null, loaded: false };
-            const img = new Image();
-            const obj = { img: img, loaded: false };
-            img.onload = () => { obj.loaded = true; };
-            img.src = src;
-            return obj;
+        imageCache.player = createCachedImage(PLAYER_IMAGE_SRC, PLAYER_RADIUS * 3, PLAYER_RADIUS * 3, true);
+        
+        function loadBg(src) {
+            const res = { img: new Image(), loaded: false };
+            res.img.onload = () => { res.loaded = true; };
+            res.img.src = src;
+            return res;
         }
-        imageCache.bgNormal = loadBgImage(BACKGROUND_IMAGE_NORMAL);
-        imageCache.bgFever = loadBgImage(BACKGROUND_IMAGE_FEVER);
+        imageCache.bgNormal = loadBg(BACKGROUND_IMAGE_NORMAL);
+        imageCache.bgFever = loadBg(BACKGROUND_IMAGE_FEVER);
 
-        ENEMY_DATA.forEach((data, idx) => {
-            if (data.src) imageCache.enemies.push({ data: createProcessedImage(data.src, data.size, data.size, false), size: data.size, originalIndex: idx });
-            else imageCache.enemies.push({ data: { img: null, loaded: true }, size: data.size, originalIndex: idx });
+        ENEMY_DATA.forEach((d, idx) => {
+            imageCache.enemies.push({ data: createCachedImage(d.src, d.size, d.size), size: d.size, id: idx });
         });
 
-        function resizeCanvas() {
+        function resize() {
             canvas.width = window.innerWidth;
             canvas.height = window.innerHeight;
             scaleRatio = canvas.height / BASE_HEIGHT;
             logicalWidth = canvas.width / scaleRatio;
-            const uiScale = Math.min(scaleRatio, 1.5); 
-            document.querySelectorAll('.message-box').forEach(el => { el.style.transform = `scale(${Math.max(0.7, uiScale)})`; });
+            const uiScale = Math.min(scaleRatio, 1.2);
+            document.querySelectorAll('.message-box').forEach(el => {
+                el.style.transform = `scale(${Math.max(0.8, uiScale)})`;
+            });
         }
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
+        window.addEventListener('resize', resize);
+        resize();
 
         const player = {
-            x: 100, y: 300, radius: PLAYER_RADIUS, velocity: 0, rotation: 0,
-            draw: function() {
-                const drawX = Math.floor(this.x);
-                const drawY = Math.floor(this.y);
+            y: 360, v: 0,
+            update() {
+                this.v += GRAVITY; this.y += this.v;
+                if (this.y + PLAYER_RADIUS >= BASE_HEIGHT) { this.y = BASE_HEIGHT - PLAYER_RADIUS; gameOver(); }
+                if (this.y - PLAYER_RADIUS <= 0) { this.y = PLAYER_RADIUS; this.v = 2; }
+            },
+            draw() {
                 ctx.save();
-                ctx.translate(drawX, drawY);
-                this.rotation = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.velocity * 0.1)));
-                ctx.rotate(this.rotation);
-                if (imageCache.player.loaded) { ctx.drawImage(imageCache.player.img, -this.radius * 1.5, -this.radius * 1.5, this.radius * 3, this.radius * 3); }
-                else { ctx.beginPath(); ctx.arc(0, 0, this.radius, 0, Math.PI * 2); ctx.fillStyle = "#FFD700"; ctx.fill(); ctx.strokeStyle = "#333"; ctx.lineWidth = 3; ctx.stroke(); }
+                ctx.translate(100, Math.floor(this.y));
+                ctx.rotate(Math.min(Math.PI/4, Math.max(-Math.PI/4, this.v * 0.1)));
+                if (imageCache.player.loaded) {
+                    ctx.drawImage(imageCache.player.img, -PLAYER_RADIUS*1.5, -PLAYER_RADIUS*1.5, PLAYER_RADIUS*3, PLAYER_RADIUS*3);
+                } else {
+                    ctx.beginPath(); ctx.arc(0, 0, PLAYER_RADIUS, 0, Math.PI*2); ctx.fillStyle = "gold"; ctx.fill();
+                }
                 ctx.restore();
-            },
-            update: function() {
-                this.velocity += GRAVITY;
-                this.y += this.velocity;
-                if (this.y + this.radius >= BASE_HEIGHT) { this.y = BASE_HEIGHT - this.radius; gameOver(); }
-                if (this.y - this.radius <= 0) { this.y = this.radius; this.velocity = 2; }
-            },
-            jump: function() { this.velocity = JUMP_STRENGTH; playSound('jump'); }
+            }
         };
 
         const obstacles = {
-            items: [],
-            draw: function() {
-                for (let i = 0; i < this.items.length; i++) {
-                    let o = this.items[i];
-                    if (o.x + o.size < -50 || o.x > logicalWidth + 50) continue; 
-                    const drawX = Math.floor(o.x);
-                    const drawY = Math.floor(o.y);
-                    if (o.enemyCache && o.enemyCache.data.loaded) { ctx.drawImage(o.enemyCache.data.img, drawX, drawY); }
-                    else { ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(drawX + o.size/2, drawY + o.size/2, o.size/2, 0, Math.PI*2); ctx.fill(); }
+            list: [],
+            update() {
+                let last = this.list[this.list.length - 1];
+                if (!last || logicalWidth - (last.x + last.s) >= SPAWN_INTERVAL) {
+                    let unlocked = Math.min(Math.floor(score / LEVEL_STEP) + 1, imageCache.enemies.length);
+                    let enemy = imageCache.enemies[Math.floor(Math.random() * unlocked)];
+                    this.list.push({ x: logicalWidth, y: Math.random() * (BASE_HEIGHT - enemy.size), s: enemy.size, cache: enemy, passed: false });
                 }
-            },
-            update: function() {
-                let lastItem = this.items.length > 0 ? this.items[this.items.length - 1] : null;
-                if (!lastItem || logicalWidth - (lastItem.x + lastItem.size) >= SPAWN_INTERVAL) {
-                    let unlockedCount = Math.min(Math.floor(score / LEVEL_STEP) + 1, imageCache.enemies.length);
-                    let selected = imageCache.enemies[Math.floor(Math.random() * unlockedCount)];
-                    let size = selected ? selected.size : 100;
-                    this.items.push({ x: logicalWidth, y: Math.random() * (BASE_HEIGHT - size), size: size, enemyCache: selected, passed: false });
-                }
-                for (let i = 0; i < this.items.length; i++) {
-                    let o = this.items[i];
-                    o.x -= gameSpeed;
-                    let dx = (o.x + o.size/2) - player.x;
-                    let dy = (o.y + o.size/2) - player.y;
-                    if (dx*dx + dy*dy < Math.pow(player.radius + o.size/2.2, 2)) { gameOver(); }
-                    if (o.x + o.size < player.x && !o.passed) {
-                        score += 10; scoreDisplay.innerText = score;
+                for (let i = 0; i < this.list.length; i++) {
+                    let o = this.list[i]; o.x -= gameSpeed;
+                    let dx = (o.x + o.s/2) - 100; let dy = (o.y + o.s/2) - player.y;
+                    if (dx*dx + dy*dy < Math.pow(PLAYER_RADIUS + o.s/2.2, 2)) gameOver();
+                    if (o.x + o.s < 100 && !o.passed) {
+                        score += 10; scoreOverlay.innerText = score;
                         playSound('score'); o.passed = true;
                         if (score >= 1000) playBgm('fever');
                         if (score % LEVEL_STEP === 0) levelUp();
                     }
-                    if (o.x + o.size < -200) { this.items.shift(); i--; }
+                    if (o.x + o.s < -100) { this.list.splice(i, 1); i--; }
                 }
             },
-            reset: function() { this.items = []; }
-        };
-
-        function drawBackground() {
-            let imgObj = (score >= 1000 && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
-            if (imgObj && imgObj.loaded) {
-                const scrollSpeed = (gameState === 'PLAYING') ? gameSpeed * 0.5 : 1; 
-                bgX -= scrollSpeed; 
-                let imgW = Math.floor(imgObj.img.width * (BASE_HEIGHT / imgObj.img.height));
-                if (bgX <= -imgW) bgX += imgW;
-                let drawX = Math.floor(bgX);
-                while (drawX < logicalWidth) {
-                    ctx.drawImage(imgObj.img, drawX, 0, imgW + 1, BASE_HEIGHT); // +1px overlap to avoid gaps
-                    drawX += imgW;
+            draw() {
+                for (let o of this.list) {
+                    if (o.cache && o.cache.data.loaded) ctx.drawImage(o.cache.data.img, Math.floor(o.x), Math.floor(o.y));
+                    else { ctx.fillStyle = "#333"; ctx.beginPath(); ctx.arc(o.x+o.s/2, o.y+o.s/2, o.s/2, 0, Math.PI*2); ctx.fill(); }
                 }
             }
-        }
+        };
 
         function levelUp() {
-            if (currentLevel >= MAX_LEVEL) { levelDisplay.innerText = "Lv.MAX"; return; }
+            if (currentLevel >= MAX_LEVEL) { levelOverlay.innerText = "Lv.MAX"; return; }
             currentLevel++; gameSpeed += 0.8;
-            levelDisplay.innerText = "Lv." + currentLevel;
+            levelOverlay.innerText = "Lv." + currentLevel;
+        }
+
+        function drawBg() {
+            let imgObj = (score >= 1000 && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
+            if (imgObj && imgObj.loaded) {
+                bgX -= (gameState === 'PLAYING') ? gameSpeed * 0.5 : 1;
+                let w = Math.floor(imgObj.img.width * (BASE_HEIGHT / imgObj.img.height));
+                if (bgX <= -w) bgX += w;
+                for (let x = Math.floor(bgX); x < logicalWidth; x += w) {
+                    ctx.drawImage(imgObj.img, x, 0, w + 1, BASE_HEIGHT);
+                }
+            }
         }
 
         function loop() {
-            ctx.setTransform(1, 0, 0, 1, 0, 0); 
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
-            drawBackground();
-            if (gameState === 'PLAYING') {
-                obstacles.update(); obstacles.draw();
-                player.update(); player.draw();
-            }
+            drawBg();
+            if (gameState === 'PLAYING') { obstacles.update(); obstacles.draw(); player.update(); player.draw(); }
             requestAnimationFrame(loop);
         }
 
-        window.startGame = function() {
+        // グローバル関数登録
+        window.startGame = () => {
+            bgmVolume = parseFloat(bgmSlider.value);
+            seVolume = parseFloat(seSlider.value);
             gameState = 'PLAYING';
             startScreen.style.display = 'none';
-            scoreDisplay.style.display = 'block';
-            levelDisplay.style.display = 'block';
-            player.y = BASE_HEIGHT / 2;
-            player.velocity = 0;
-            obstacles.reset();
+            gameOverScreen.style.display = 'none';
+            scoreOverlay.style.display = 'block';
+            levelOverlay.style.display = 'block';
+            player.y = 360; player.v = 0;
+            obstacles.list = [];
             score = 0; currentLevel = 1; gameSpeed = INITIAL_SPEED;
-            scoreDisplay.innerText = "0";
-            levelDisplay.innerText = "Lv.1";
+            scoreOverlay.innerText = "0"; levelOverlay.innerText = "Lv.1";
             playBgm('normal');
         };
 
         function gameOver() {
             gameState = 'GAMEOVER';
-            stopBgm(); playSound('gameover');
+            if (currentBgm) currentBgm.pause();
+            playSound('gameover');
             finalScoreText.innerText = score;
             saveHighScore(score);
             gameOverScreen.style.display = 'block';
-            scoreDisplay.style.display = 'none';
-            levelDisplay.style.display = 'none';
+            scoreOverlay.style.display = 'none';
+            levelOverlay.style.display = 'none';
         }
 
-        window.backToTitle = function() {
+        window.backToTitle = () => {
             gameOverScreen.style.display = 'none';
-            startScreen.style.display = 'block'; 
+            startScreen.style.display = 'block';
             gameState = 'START';
             score = 0;
+            if (currentBgm) { currentBgm.pause(); currentBgm.currentTime = 0; currentBgm = null; }
         };
 
-        const handleJump = (e) => {
+        const handleAction = (e) => {
             if (e.target.type === 'range' || e.target.tagName === 'BUTTON') return;
             if (e.cancelable) e.preventDefault();
-            if (gameState === 'PLAYING') player.jump();
+            if (gameState === 'PLAYING') player.v = JUMP_STRENGTH, playSound('jump');
         };
-        window.addEventListener('keydown', (e) => { if (e.code === 'Space') handleJump(e); });
-        window.addEventListener('mousedown', handleJump);
-        window.addEventListener('touchstart', handleJump, {passive: false});
+        window.addEventListener('keydown', (e) => { if (e.code === 'Space') handleAction(e); });
+        window.addEventListener('mousedown', handleAction);
+        window.addEventListener('touchstart', handleAction, {passive: false});
 
         requestAnimationFrame(loop);
     </script>
