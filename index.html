@@ -11,17 +11,19 @@
             background-color: #333;
             overflow: hidden; 
             font-family: 'Arial', sans-serif;
-            touch-action: none; /* スマホでのスクロールやズームを無効化 */
+            touch-action: none;
             user-select: none;
             -webkit-user-select: none;
-            -webkit-tap-highlight-color: transparent; /* タップ時のハイライトを消す */
+            -webkit-tap-highlight-color: transparent;
+            width: 100vw;
+            height: 100vh;
         }
         #gameCanvas {
             display: block;
-            margin: 0 auto;
+            width: 100%;
+            height: 100%;
             background: linear-gradient(to bottom, #70c5ce 0%, #ffffff 100%); 
             transition: background 1s ease;
-            /* 描画の最適化ヒント */
             image-rendering: -webkit-optimize-contrast; 
         }
         
@@ -37,6 +39,7 @@
             justify-content: center;
             align-items: center;
             text-align: center;
+            z-index: 20;
         }
         .message-box {
             background: rgba(255, 255, 255, 0.95);
@@ -47,7 +50,7 @@
             max-width: 90%; 
             width: 350px;
             transform-origin: center;
-            will-change: transform; /* アニメーション最適化 */
+            will-change: transform;
         }
         h1 {
             margin: 0 0 10px 0;
@@ -57,14 +60,21 @@
         }
         p {
             color: #555;
-            margin-bottom: 15px;
+            margin-bottom: 5px;
             font-size: 16px;
             line-height: 1.4;
         }
         
-        /* 音量設定エリア */
+        /* ハイスコア表示用のスタイル */
+        .high-score-text {
+            font-size: 16px;
+            color: #ff5722;
+            font-weight: bold;
+            margin-bottom: 15px;
+        }
+        
         .settings-area {
-            margin: 15px 0;
+            margin: 10px 0 20px 0;
             background: #f0f0f0;
             padding: 10px;
             border-radius: 10px;
@@ -92,7 +102,7 @@
             color: white;
             border: none;
             padding: 12px 40px;
-            font-size: 20px;
+            font-size: 18px;
             font-weight: bold;
             border-radius: 30px;
             cursor: pointer;
@@ -140,8 +150,9 @@
         <div id="start-screen" class="message-box">
             <h1>Avoid Rabuka!</h1>
             <p>前から飛んでくる敵を避けろ！</p>
+            <!-- ハイスコア表示 -->
+            <div id="start-best-score" class="high-score-text">自己ベスト: ---</div>
             
-            <!-- 音量設定エリア -->
             <div class="settings-area">
                 <div class="volume-control">
                     <label>BGM</label>
@@ -160,6 +171,8 @@
         <div id="game-over-screen" class="message-box" style="display: none;">
             <h1>あ〜あ、ぶつかっちゃいましたね〜</h1>
             <p>Score: <span id="final-score">0</span></p>
+            <!-- ハイスコア表示 -->
+            <div id="over-best-score" class="high-score-text">自己ベスト: ---</div>
             <button onclick="backToTitle()">タイトルへ</button>
         </div>
     </div>
@@ -169,7 +182,7 @@
         // ▼▼▼ 画像の設定 ▼▼▼
         // ==========================================
         const PLAYER_IMAGE_SRC = './Rabuka.png'; 
-        const BACKGROUND_IMAGE_NORMAL = './sozai_image_191339.png'; 
+        const BACKGROUND_IMAGE_NORMAL = './sora.png'; 
         const BACKGROUND_IMAGE_FEVER  = './color0083.png'; 
 
         // ==========================================
@@ -211,6 +224,8 @@
         const finalScoreText = document.getElementById('final-score');
         const bgmSlider = document.getElementById('bgm-slider');
         const seSlider = document.getElementById('se-slider');
+        const startBestScoreText = document.getElementById('start-best-score');
+        const overBestScoreText = document.getElementById('over-best-score');
 
         // 音量変数
         let bgmVolume = parseFloat(bgmSlider.value);
@@ -224,6 +239,19 @@
         seSlider.addEventListener('input', (e) => {
             seVolume = parseFloat(e.target.value);
         });
+
+        // ハイスコア管理（ローカルストレージ）
+        let highScore = 0;
+        try {
+            const saved = localStorage.getItem('avoidRabukaHighScore');
+            if (saved) highScore = parseInt(saved);
+        } catch(e) {}
+
+        function updateHighScoreText() {
+            startBestScoreText.innerText = "自己ベスト: " + highScore;
+            overBestScoreText.innerText = "自己ベスト: " + highScore;
+        }
+        updateHighScoreText(); // 初期表示
 
         // 音声管理
         const sounds = {
@@ -526,18 +554,12 @@
         function drawBackground() {
             let imgObj = (score >= 1000 && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
             if (imgObj && imgObj.loaded) {
-                // スクロール速度の決定
                 const scrollSpeed = (gameState === 'PLAYING') ? gameSpeed * 0.5 : 1; 
                 bgX -= scrollSpeed; 
-                
                 let imgW = Math.floor(imgObj.img.width * (BASE_HEIGHT / imgObj.img.height));
-                
-                // ループ計算
                 if (bgX <= -imgW) bgX += imgW;
-                
                 let drawX = Math.floor(bgX);
                 while (drawX < logicalWidth) {
-                    // チカチカ防止のため、描画幅を1ピクセルだけ余分に持たせて重ねる
                     ctx.drawImage(imgObj.img, drawX, 0, imgW + 1, BASE_HEIGHT);
                     drawX += imgW;
                 }
@@ -558,7 +580,6 @@
         }
 
         function loop() {
-            // 背景は常に描画する
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
@@ -575,7 +596,8 @@
             requestAnimationFrame(loop);
         }
 
-        function startGame() {
+        // グローバルスコープに公開してHTMLから呼べるようにする
+        window.startGame = function() {
             gameState = 'PLAYING';
             startScreen.style.display = 'none';
             scoreDisplay.style.display = 'block';
@@ -597,12 +619,20 @@
             stopBgm(); 
             playSound('gameover');
             finalScoreText.innerText = score;
+            
+            // ハイスコア更新判定
+            if (score > highScore) {
+                highScore = score;
+                localStorage.setItem('avoidRabukaHighScore', highScore);
+                updateHighScoreText();
+            }
+
             gameOverScreen.style.display = 'block';
             scoreDisplay.style.display = 'none';
             levelDisplay.style.display = 'none';
         }
 
-        function backToTitle() {
+        window.backToTitle = function() {
             gameOverScreen.style.display = 'none';
             startScreen.style.display = 'block'; 
             scoreDisplay.style.display = 'none';
