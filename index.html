@@ -67,11 +67,11 @@
         }
         .message-box {
             background: rgba(255, 255, 255, 0.95);
-            padding: 20px 20px; /* パディングを少し減らして文字領域を確保 */
+            padding: 20px 20px;
             border-radius: 15px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.3);
             pointer-events: auto; 
-            max-width: 95%; /* スマホでギリギリまで使えるように */
+            max-width: 95%; 
             width: 320px;
             transform-origin: center;
             box-sizing: border-box;
@@ -79,7 +79,7 @@
         h1 {
             margin: 0 0 10px 0;
             color: #333;
-            font-size: 18px; /* はみ出し防止のため少し小さく */
+            font-size: 18px;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -220,7 +220,7 @@
         const BACKGROUND_IMAGE_FEVER  = './color0083.png'; 
 
         const ENEMY_DATA = [
-            { src: './issen.png', size: 100, name: 'いっせん' },
+            { src: './issen.png', size: 100, name: '一仙' },
             { src: './TD.png',    size: 100, name: 'TD襲来' },
             { src: './魚卵.png',  size: 100, name: '魚卵襲来' },
             { src: './houou.png', size: 120, name: 'ホウオウ襲来' },
@@ -391,25 +391,31 @@
         }
 
         // --- 画像処理 (キャッシュ & フォールバック) ---
-        const imageCache = { player: null, bgNormal: null, bgFever: null, enemies: [] };
+        const imageCache = {
+            player: null,
+            bgNormal: null,
+            bgFever: null,
+            enemies: []
+        };
+
         const tempCanvas = document.createElement('canvas');
         const tempCtx = tempCanvas.getContext('2d');
 
-        function createCachedImage(src, w, h, circle = false) {
+        function createProcessedImage(imgSrc, width, height, isCircle = false) {
             const result = { img: null, loaded: false, isRaw: false };
-            if (!src) return result;
+            if (!imgSrc) return result;
             
             const rawImg = new Image();
             rawImg.crossOrigin = "Anonymous"; 
             
             rawImg.onload = () => {
                 try {
-                    tempCanvas.width = w; tempCanvas.height = h;
-                    tempCtx.clearRect(0, 0, w, h);
-                    if (circle) {
+                    tempCanvas.width = width; tempCanvas.height = height;
+                    tempCtx.clearRect(0, 0, width, height);
+                    if (isCircle) {
                         tempCtx.beginPath(); tempCtx.arc(w/2, h/2, w/2, 0, Math.PI * 2); tempCtx.clip();
                     }
-                    tempCtx.drawImage(rawImg, 0, 0, w, h);
+                    tempCtx.drawImage(rawImg, 0, 0, width, height);
                     const processed = new Image();
                     processed.src = tempCanvas.toDataURL();
                     result.img = processed;
@@ -420,6 +426,7 @@
                     result.isRaw = true;
                 }
             };
+            rawImg.onerror = () => { /* 画像エラーは無視して続行 */ };
             rawImg.src = imgSrc;
             return result;
         }
@@ -433,14 +440,14 @@
         }
 
         // 画像初期化
-        imageCache.player = createCachedImage(PLAYER_IMAGE_SRC, PLAYER_RADIUS * 3, PLAYER_RADIUS * 3, true);
+        imageCache.player = createProcessedImage(PLAYER_IMAGE_SRC, PLAYER_RADIUS * 3, PLAYER_RADIUS * 3, true);
         imageCache.bgNormal = loadBg(BACKGROUND_IMAGE_NORMAL);
         imageCache.bgFever = loadBg(BACKGROUND_IMAGE_FEVER);
 
         ENEMY_DATA.forEach((d, idx) => {
             if (d.src) {
                 imageCache.enemies.push({ 
-                    data: createCachedImage(d.src, d.size, d.size, false), 
+                    data: createProcessedImage(d.src, d.size, d.size, false), 
                     size: d.size, 
                     id: idx, 
                     name: d.name 
@@ -505,8 +512,7 @@
                 ctx.restore();
             },
             jump() {
-                this.velocity = JUMP_STRENGTH; 
-                player.v = JUMP_STRENGTH;
+                this.v = JUMP_STRENGTH; // 速度を直接書き換え
                 playSound('jump'); 
             }
         };
@@ -627,8 +633,8 @@
             requestAnimationFrame(loop);
         }
 
-        // グローバル関数定義
-        window.startGame = function() {
+        // 関数を直接グローバルに定義
+        function startGame() {
             gameState = 'PLAYING';
             startScreen.style.display = 'none';
             gameOverScreen.style.display = 'none';
@@ -636,7 +642,7 @@
             levelDisplay.style.display = 'block';
             
             player.y = BASE_HEIGHT / 2;
-            player.v = 0; // ★ここ修正しました：速度リセット
+            player.v = 0; // 速度リセット
             obstacles.list = [];
             score = 0; 
             currentLevel = 1; 
@@ -648,7 +654,8 @@
             levelDisplay.style.color = "white";
             
             checkGameState();
-        };
+        }
+        window.startGame = startGame; // 明示的に割り当て
 
         function gameOver() {
             gameState = 'GAMEOVER';
@@ -669,7 +676,7 @@
             invasionBanner.style.display = 'none';
         }
 
-        window.backToTitle = function() {
+        function backToTitle() {
             gameOverScreen.style.display = 'none';
             startScreen.style.display = 'block'; 
             scoreDisplay.style.display = 'none';
@@ -677,7 +684,8 @@
             gameState = 'START';
             score = 0;
             canvas.classList.remove('rainbow-bg');
-        };
+        }
+        window.backToTitle = backToTitle;
 
         const handleAction = (e) => {
             if (e.target.type === 'range' || e.target.tagName === 'BUTTON') return;
