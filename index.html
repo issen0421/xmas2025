@@ -220,7 +220,7 @@
         const BACKGROUND_IMAGE_FEVER  = './color0083.png'; 
 
         const ENEMY_DATA = [
-            { src: './issen.png', size: 100, name: '一仙' },
+            { src: './issen.png', size: 100, name: 'いっせん' },
             { src: './TD.png',    size: 100, name: 'TD襲来' },
             { src: './魚卵.png',  size: 100, name: '魚卵襲来' },
             { src: './houou.png', size: 120, name: 'ホウオウ襲来' },
@@ -413,7 +413,7 @@
                     tempCanvas.width = width; tempCanvas.height = height;
                     tempCtx.clearRect(0, 0, width, height);
                     if (isCircle) {
-                        tempCtx.beginPath(); tempCtx.arc(w/2, h/2, w/2, 0, Math.PI * 2); tempCtx.clip();
+                        tempCtx.beginPath(); tempCtx.arc(width/2, height/2, width/2, 0, Math.PI * 2); tempCtx.clip();
                     }
                     tempCtx.drawImage(rawImg, 0, 0, width, height);
                     const processed = new Image();
@@ -512,7 +512,7 @@
                 ctx.restore();
             },
             jump() {
-                this.v = JUMP_STRENGTH; // 速度を直接書き換え
+                this.v = JUMP_STRENGTH; 
                 playSound('jump'); 
             }
         };
@@ -539,25 +539,33 @@
                     let distSq = dx*dx + dy*dy;
                     let minDist = PLAYER_RADIUS + (o.s / 2 * 0.8);
                     
-                    if (distSq < minDist * minDist) { gameOver(); }
+                    if (distSq < minDist * minDist) {
+                        gameOver();
+                    }
                     
                     if (o.x + o.s < 100 && !o.passed) {
                         score += 10; scoreDisplay.innerText = score;
-                        let eIdx = (o.cache) ? o.cache.id : null;
-                        playSound('score', eIdx);
-                        o.passed = true;
                         
-                        checkGameState();
-                        if (score % LEVEL_STEP === 0) levelUp();
-
                         // 襲来チェック
+                        let invasionTriggered = false;
                         let nextUnlockedCount = Math.floor(score / LEVEL_STEP) + 1;
                         if (nextUnlockedCount > maxUnlockedIndex + 1) {
                             maxUnlockedIndex++;
                             if (maxUnlockedIndex < imageCache.enemies.length && maxUnlockedIndex > 0) {
                                 showInvasionBanner(imageCache.enemies[maxUnlockedIndex].name);
+                                invasionTriggered = true; // 襲来あり
                             }
                         }
+
+                        // 襲来がないときだけスコア音を鳴らす
+                        if (!invasionTriggered) {
+                            let eIdx = (o.cache) ? o.cache.id : null;
+                            playSound('score', eIdx);
+                        }
+
+                        o.passed = true;
+                        checkGameState();
+                        if (score % LEVEL_STEP === 0) levelUp();
                     }
                     if (o.x + o.s < -200) { this.list.splice(i, 1); i--; }
                 }
@@ -633,8 +641,8 @@
             requestAnimationFrame(loop);
         }
 
-        // 関数を直接グローバルに定義
-        function startGame() {
+        // グローバル関数定義
+        window.startGame = function() {
             gameState = 'PLAYING';
             startScreen.style.display = 'none';
             gameOverScreen.style.display = 'none';
@@ -654,8 +662,7 @@
             levelDisplay.style.color = "white";
             
             checkGameState();
-        }
-        window.startGame = startGame; // 明示的に割り当て
+        };
 
         function gameOver() {
             gameState = 'GAMEOVER';
@@ -676,7 +683,7 @@
             invasionBanner.style.display = 'none';
         }
 
-        function backToTitle() {
+        window.backToTitle = function() {
             gameOverScreen.style.display = 'none';
             startScreen.style.display = 'block'; 
             scoreDisplay.style.display = 'none';
@@ -684,9 +691,9 @@
             gameState = 'START';
             score = 0;
             canvas.classList.remove('rainbow-bg');
-        }
-        window.backToTitle = backToTitle;
+        };
 
+        // 操作イベント
         const handleAction = (e) => {
             if (e.target.type === 'range' || e.target.tagName === 'BUTTON') return;
             if (e.cancelable) e.preventDefault();
