@@ -186,7 +186,7 @@
         <div id="start-screen" class="message-box">
             <h1>Avoid Rabuka!</h1>
             <p>前から飛んでくる敵を避けろ！</p>
-            <div id="start-best-score" class="high-score-text">ハイスコア: ---</div>
+            <div id="start-best-score" class="high-score-text">自己ベスト: ---</div>
             
             <div class="settings-area">
                 <div class="volume-control">
@@ -206,7 +206,7 @@
         <div id="game-over-screen" class="message-box" style="display: none;">
             <h1>あ〜あ、ぶつかっちゃいましたね〜</h1>
             <p>Score: <span id="final-score">0</span></p>
-            <div id="over-best-score" class="high-score-text">ハイスコア: ---</div>
+            <div id="over-best-score" class="high-score-text">自己ベスト: ---</div>
             <button onclick="backToTitle()">タイトルへ</button>
         </div>
     </div>
@@ -220,10 +220,10 @@
         const BACKGROUND_IMAGE_FEVER  = './color0083.png'; 
 
         const ENEMY_DATA = [
-            { src: './issen.png', size: 120, name: 'いっせん' },
-            { src: './TD.png',    size: 120, name: 'TD襲来' },
-            { src: './魚卵.png',  size: 120, name: '魚卵襲来' },
-            { src: './houou.png', size: 150, name: 'ホウオウ襲来' },
+            { src: './issen.png', size: 100, name: '一閃' },
+            { src: './TD.png',    size: 100, name: 'TD襲来' },
+            { src: './魚卵.png',  size: 100, name: '魚卵襲来' },
+            { src: './houou.png', size: 120, name: '鳳凰襲来' },
             { src: './rugia.png', size: 150, name: 'ルギア襲来' }
         ];
 
@@ -232,10 +232,10 @@
         // ==========================================
         const SOUND_JUMP_SRC = './ニュッ2.mp3';      
         const SOUND_GAMEOVER_SRC = './「残念」.mp3';  
-        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
+        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
         const BGM_SRC_NORMAL = './普通.mp3'; 
         const BGM_SRC_FEVER  = './FEVER.mp3'; 
-        const SOUND_INVASION_SRC = './警告音2.mp3';
+        const SOUND_INVASION_SRC = './warning.mp3';
 
         // ==========================================
         // ▼▼▼ ゲームバランス設定 ▼▼▼
@@ -248,6 +248,10 @@
         const INITIAL_SPEED = 5;
         const GRAVITY = 0.4;
         const JUMP_STRENGTH = -8;
+        
+        // ★ FPS制御用定数 ★
+        const TARGET_FPS = 60;
+        const FRAME_INTERVAL = 1000 / TARGET_FPS;
 
         // ==========================================
         // システム変数・DOM取得
@@ -275,6 +279,9 @@
         let bgmVolume = 0.3;
         let seVolume = 0.5;
         let maxUnlockedIndex = 0; 
+        
+        // ★ 時間管理変数 ★
+        let lastTime = 0;
 
         // --- ハイスコア管理 (LocalStorage) ---
         let highScore = 0;
@@ -286,8 +293,8 @@
         }
 
         function updateHighScoreUI() {
-            startBestScoreText.innerText = "ハイスコア: " + highScore;
-            overBestScoreText.innerText = "ハイスコア: " + highScore;
+            startBestScoreText.innerText = "自己ベスト: " + highScore;
+            overBestScoreText.innerText = "自己ベスト: " + highScore;
         }
         updateHighScoreUI();
 
@@ -624,21 +631,34 @@
             setTimeout(() => { levelDisplay.style.color = "white"; }, 500);
         }
 
-        function loop() {
-            ctx.setTransform(1, 0, 0, 1, 0, 0); 
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
-            
-            drawBackground();
+        // ★ FPS制御付きループ ★
+        function loop(timestamp) {
+            requestAnimationFrame(loop);
 
-            if (gameState === 'PLAYING') {
-                obstacles.update();
-                obstacles.draw();
-                player.update();
-                player.draw();
+            if (!lastTime) {
+                lastTime = timestamp;
+                return;
             }
 
-            requestAnimationFrame(loop);
+            const deltaTime = timestamp - lastTime;
+
+            // 一定時間（16ms = 60FPS）経過するまで更新しない
+            if (deltaTime >= FRAME_INTERVAL) {
+                lastTime = timestamp - (deltaTime % FRAME_INTERVAL);
+
+                ctx.setTransform(1, 0, 0, 1, 0, 0); 
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
+                
+                drawBackground();
+
+                if (gameState === 'PLAYING') {
+                    obstacles.update();
+                    obstacles.draw();
+                    player.update();
+                    player.draw();
+                }
+            }
         }
 
         // グローバル関数定義
@@ -691,9 +711,14 @@
             gameState = 'START';
             score = 0;
             canvas.classList.remove('rainbow-bg');
+            
+            // 背景リセット用
+            ctx.setTransform(1, 0, 0, 1, 0, 0); 
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
+            drawBackground();
         };
 
-        // 操作イベント
         const handleAction = (e) => {
             if (e.target.type === 'range' || e.target.tagName === 'BUTTON') return;
             if (e.cancelable) e.preventDefault();
