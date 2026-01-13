@@ -27,7 +27,6 @@
             image-rendering: -webkit-optimize-contrast; 
         }
         
-        /* 襲来バナー */
         #invasion-banner {
             position: absolute;
             top: 20%;
@@ -232,7 +231,7 @@
         // ==========================================
         const SOUND_JUMP_SRC = './ニュッ2.mp3';      
         const SOUND_GAMEOVER_SRC = './「残念」.mp3';  
-        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
+        const SOUND_SCORE_SRC = './決定ボタンを押す13.mp3'; 
         const BGM_SRC_NORMAL = './普通.mp3'; 
         const BGM_SRC_FEVER  = './FEVER.mp3'; 
         const SOUND_INVASION_SRC = './警告音2.mp3';
@@ -248,6 +247,9 @@
         const INITIAL_SPEED = 5;
         const GRAVITY = 0.4;
         const JUMP_STRENGTH = -8;
+
+        // ★ 固定タイムステップ設定 (60FPS固定) ★
+        const TIME_STEP = 1000 / 60; 
 
         // ==========================================
         // システム変数・DOM取得
@@ -275,7 +277,9 @@
         let bgmVolume = 0.3;
         let seVolume = 0.5;
         let maxUnlockedIndex = 0; 
-        let lastTime = 0; // 時間計測用
+        
+        let lastTime = 0;
+        let accumulator = 0;
 
         // --- ハイスコア管理 (LocalStorage) ---
         let highScore = 0;
@@ -487,9 +491,10 @@
         // --- キャラクター ---
         const player = {
             y: 360, v: 0,
-            update(timeScale) {
-                this.v += GRAVITY * timeScale; 
-                this.y += this.v * timeScale;
+            update() {
+                // 固定ステップ内のロジックなのでdeltaTime不要
+                this.v += GRAVITY; 
+                this.y += this.v;
 
                 if (this.y + PLAYER_RADIUS >= BASE_HEIGHT) { 
                     this.y = BASE_HEIGHT - PLAYER_RADIUS; 
@@ -497,7 +502,7 @@
                 }
                 if (this.y - PLAYER_RADIUS <= 0) { 
                     this.y = PLAYER_RADIUS; 
-                    this.v = 2; // 天井バウンドは固定値でOK
+                    this.v = 2; 
                 }
             },
             draw() {
@@ -529,7 +534,8 @@
         // --- 障害物 ---
         const obstacles = {
             list: [],
-            update(timeScale) {
+            update() {
+                // 固定ステップ内のロジック
                 let last = this.list[this.list.length - 1];
                 if (!last || logicalWidth - (last.x + last.s) >= SPAWN_INTERVAL) {
                     let unlocked = Math.min(Math.floor(score / LEVEL_STEP) + 1, imageCache.enemies.length);
@@ -541,7 +547,7 @@
                 }
                 for (let i = 0; i < this.list.length; i++) {
                     let o = this.list[i]; 
-                    o.x -= gameSpeed * timeScale; // 速度補正
+                    o.x -= gameSpeed; // 固定値で移動
 
                     let centerX = o.x + o.s/2;
                     let centerY = o.y + o.s/2;
@@ -598,7 +604,8 @@
             else playBgm('normal');
         }
 
-        function drawBackground(timeScale) {
+        // 背景更新処理（固定ステップ用）
+        function updateBackground() {
             let imgObj = (score >= 1000 && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
             
             if (score >= 1000 && !imageCache.bgFever.loaded) {
@@ -608,12 +615,24 @@
             }
 
             if (imgObj && imgObj.loaded) {
-                // スクロール速度にも timeScale を適用
-                const scrollSpeed = (gameState === 'PLAYING') ? (gameSpeed * 0.5 * timeScale) : (1 * timeScale); 
+                const scrollSpeed = (gameState === 'PLAYING') ? gameSpeed * 0.5 : 1; 
                 bgX -= scrollSpeed; 
+                
                 let imgW = Math.floor(imgObj.img.width * (BASE_HEIGHT / imgObj.img.height));
+                // ループリセット
                 if (bgX <= -imgW) bgX += imgW;
+            }
+        }
+
+        // 背景描画処理
+        function drawBackground() {
+            let imgObj = (score >= 1000 && imageCache.bgFever.loaded) ? imageCache.bgFever : imageCache.bgNormal;
+            
+            if (imgObj && imgObj.loaded) {
+                let imgW = Math.floor(imgObj.img.width * (BASE_HEIGHT / imgObj.img.height));
                 let drawX = Math.floor(bgX);
+                
+                // 画面を埋めるまで描画
                 while (drawX < logicalWidth) {
                     ctx.drawImage(imgObj.img, drawX, 0, imgW + 1, BASE_HEIGHT);
                     drawX += imgW;
@@ -634,7 +653,7 @@
             setTimeout(() => { levelDisplay.style.color = "white"; }, 500);
         }
 
-        // ★ デルタタイムを使用したメインループ ★
+        // ★ 固定タイムステップループ ★
         function loop(timestamp) {
             requestAnimationFrame(loop);
 
@@ -643,24 +662,32 @@
                 return;
             }
 
-            const deltaTime = timestamp - lastTime;
+            let deltaTime = timestamp - lastTime;
+            // 異常に時間が空いた場合（タブ切り替え等）のキャップ
+            if (deltaTime > 1000) deltaTime = 1000;
+            
             lastTime = timestamp;
+            accumulator += deltaTime;
 
-            // タイムスケール計算 (60FPS = 16.66ms を基準に 1.0 とする)
-            // deltaTimeが大きすぎる（ブラウザバック等）場合の補正キャップ付き
-            let timeScale = deltaTime / 16.666;
-            if (timeScale > 4) timeScale = 4; // 最大4倍速まで（コマ落ち対策）
+            // 蓄積された時間が TIME_STEP (16.66ms) を超えている限り更新を実行
+            while (accumulator >= TIME_STEP) {
+                updateBackground(); // 背景の論理位置更新
+                if (gameState === 'PLAYING') {
+                    obstacles.update(); // 敵の移動
+                    player.update();    // プレイヤーの移動
+                }
+                accumulator -= TIME_STEP;
+            }
 
+            // 描画（現在の状態を表示）
             ctx.setTransform(1, 0, 0, 1, 0, 0); 
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
             
-            drawBackground(timeScale);
+            drawBackground();
 
             if (gameState === 'PLAYING') {
-                obstacles.update(timeScale); // 速度補正を渡す
                 obstacles.draw();
-                player.update(timeScale);    // 速度補正を渡す
                 player.draw();
             }
         }
@@ -680,7 +707,10 @@
             currentLevel = 1; 
             gameSpeed = INITIAL_SPEED;
             maxUnlockedIndex = 0;
-            lastTime = performance.now(); // 時間リセット
+            
+            // 時間管理リセット
+            lastTime = performance.now();
+            accumulator = 0;
             
             scoreDisplay.innerText = "0"; 
             levelDisplay.innerText = "Lv.1"; 
@@ -716,6 +746,12 @@
             gameState = 'START';
             score = 0;
             canvas.classList.remove('rainbow-bg');
+            
+            // 背景リセット用
+            ctx.setTransform(1, 0, 0, 1, 0, 0); 
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.setTransform(scaleRatio, 0, 0, scaleRatio, 0, 0);
+            drawBackground();
         };
 
         const handleAction = (e) => {
@@ -727,6 +763,7 @@
         window.addEventListener('mousedown', handleAction);
         window.addEventListener('touchstart', handleAction, {passive: false});
 
+        // ゲームループ開始
         requestAnimationFrame(loop);
 
     </script>
