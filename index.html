@@ -649,7 +649,7 @@
                 return;
             }
             currentLevel++;
-            if (gameSpeed < 15) gameSpeed += 0.8;
+            gameSpeed += 0.8;
             levelDisplay.innerText = "Lv." + currentLevel;
             levelDisplay.style.color = "#ffeb3b"; 
             setTimeout(() => { levelDisplay.style.color = "white"; }, 500);
